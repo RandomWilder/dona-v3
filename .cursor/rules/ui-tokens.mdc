@@ -1,0 +1,11 @@
+---
+description: UI files use design tokens and RTL logical properties only
+globs: ["src/**/ui/**", "**/*.html"]
+alwaysApply: false
+---
+
+- Colors, fonts, spacing, radii come ONLY from `/ui/tokens.css` variables — never a hex value, font name, or pixel size inline.
+- Hebrew RTL: `dir="rtl" lang="he"`; logical CSS properties only (`inline-start`/`inline-end`, `margin-inline`, `padding-block`) — never `left`/`right`.
+- Wrap ids, times, phone numbers, and dates in `dir="ltr"` spans; format dates with `Intl.DateTimeFormat('he-IL')`.
+- Self-contained HTML per screen; no bundler, no component framework, no new runtime UI dependency.
+- Touch targets ≥ 44px on tenant screens; 36px controls on the ops board.

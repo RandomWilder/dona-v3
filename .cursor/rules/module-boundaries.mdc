@@ -1,0 +1,12 @@
+---
+description: Module boundary rules for the modular monolith
+globs: ["src/**/*.ts"]
+alwaysApply: false
+---
+
+- A module may import another module ONLY via its `contract.ts` — never anything under `src/<module>/internal/`.
+- The kernel (`src/kernel/`) contains no business logic; modules never reach around it to raw infrastructure.
+- Every command validates input at the edge, honours idempotency keys, and writes an audit record.
+- Errors use the shared shape `{ code, message, details? }` with the five codes from SPEC.md — never throw raw strings or return null for failure.
+- Policies (timeouts, rates, deductibles, flags) are read from config/data — adding a constant where a config row belongs is a bug.
+- Before changing a module's behavior: update its `SPEC-<module>.md` in the same change.

@@ -19,13 +19,13 @@ Everything with a lead time you don't control, fired before writing code.
 **Done when:** all four fired and logged (a note per item: date, status, who owes what).
 **Verify:** the test SMS arrived on your phone. · Size: S (no code)
 
-### Slice 1.2 — Repo + agent context layer ☐
-- [ ] `git init`, GitHub repo, branch protection on `main` (required checks, no force-push)
-- [ ] `AGENTS.md` (≤30 lines: commands, style, architecture map) + `CLAUDE.md` pointer
-- [ ] `SPEC.md` with the 8 foundation rules; empty `SPEC-<module>.md` stubs (11 modules)
-- [ ] `.claude/settings.json`: permissions allowlist + 4 hooks (format-on-write, test-after-edit, block-dangerous-bash, session-start status)
-- [ ] `.cursor/rules/`: ui-tokens rule, kernel-boundary rule, migrations rule
-- [ ] `tsconfig` + Biome + `node --test` wired; one dummy test green
+### Slice 1.2 — Repo + agent context layer ✔
+- [x] `git init`, GitHub repo (RandomWilder/dona-v3), branch protection on `main` (no force-push/deletion; required CI check added day 3 with ci.yml)
+- [x] `AGENTS.md` (≤30 lines: commands, style, architecture map) + `CLAUDE.md` pointer
+- [x] `SPEC.md` with the 8 foundation rules; empty `SPEC-<module>.md` stubs (11 modules)
+- [x] `.claude/settings.json`: permissions allowlist + hooks (format+test after write via `after-write.mjs`, block-dangerous-bash via `guard-bash.mjs`, session-start status)
+- [x] `.cursor/rules/`: ui-tokens rule, module-boundaries rule, migrations rule
+- [x] `tsconfig` + Biome + `node --test` wired; dummy kernel test green (typecheck ✓ lint ✓ test ✓)
 
 **Done when:** fresh Claude Code session reads AGENTS.md and can state the build/test commands; `npm test` green.
 **Verify:** `npm run typecheck && npm test` · Size: M

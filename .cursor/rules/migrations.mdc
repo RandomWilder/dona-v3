@@ -1,0 +1,11 @@
+---
+description: SQL migration conventions
+globs: ["src/kernel/migrations/*.sql"]
+alwaysApply: false
+---
+
+- Migrations are ordered `NNNN_short_name.sql`, append-only: never edit or renumber a merged migration — write a new one.
+- Each migration is idempotent-safe to re-run (`IF NOT EXISTS` where possible) and contains no data backfill mixed with DDL — separate migrations.
+- Every table gets: `id` (text, kernel-generated), `created_at timestamptz not null default now()`; foreign keys are explicit.
+- PII columns (phones, names, ids) are commented `-- pii` so log/export tooling can find them.
+- Never DROP a column or table in the same release that stops writing it — deprecate first, drop a release later.

@@ -1,0 +1,9 @@
+# SPEC: case
+
+Stub — gains content in its build week (see ROADMAP.md). Conventions inherited from SPEC.md.
+
+- **Responsibility:** One tenant matter: intake, classification, photos, diagnosis, status, thread, priority
+- **Depends on:** occupancy
+- **Commands:** TBD (defined here before implementation)
+- **Events:** TBD
+- **Success criteria:** TBD

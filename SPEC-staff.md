@@ -1,0 +1,9 @@
+# SPEC: staff
+
+Stub — gains content in its build week (see ROADMAP.md). Conventions inherited from SPEC.md.
+
+- **Responsibility:** Admin panel edge: auth, roles, queue, conversations, approvals, settings
+- **Depends on:** all modules
+- **Commands:** TBD (defined here before implementation)
+- **Events:** TBD
+- **Success criteria:** TBD
