@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { migrate } from './migrate.ts';
+
+const migrationsDir = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'migrations',
+);
 
 const databaseUrl =
   process.env.DATABASE_URL ?? 'postgres://dona:dona@127.0.0.1:5434/dona';
@@ -34,10 +42,16 @@ describe('numbered migrations', () => {
       const applied = await pool.query<{ filename: string }>(
         'SELECT filename FROM schema_migrations ORDER BY filename',
       );
+      // Every numbered file on disk, applied exactly once, in order — asserted
+      // against the directory so adding a migration never edits this test.
+      const onDisk = (await readdir(migrationsDir))
+        .filter((name) => /^\d+_.*\.sql$/.test(name))
+        .sort();
       assert.deepEqual(
         applied.rows.map((row) => row.filename),
-        ['0001_init.sql'],
+        onDisk,
       );
+      assert.ok(onDisk.length >= 2);
       const vector = await pool.query(
         "SELECT extname FROM pg_extension WHERE extname = 'vector'",
       );
