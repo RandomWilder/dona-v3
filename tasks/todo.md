@@ -40,13 +40,13 @@ Everything with a lead time you don't control, fired before writing code. Live s
 **Done when:** clean clone → running app in under 5 minutes, documented in AGENTS.md. ✔
 **Verify:** delete the clone, re-clone, time it. · **Verified 2026-08-22: fresh GitHub clone → npm ci → db up → `/health` ok in 6 seconds** (warm docker image + npm cache; cold machine adds the ~100MB image pull, still far under 5 min). · Size: M
 
-### Slice 2.2 — Kernel core: error shape, ids, clock ☐
-- [ ] One error shape (machine code, human message, details) used by every handler
-- [ ] Id generation + injectable clock (tests never sleep or call `Date.now` directly)
-- [ ] Contract tests for both
+### Slice 2.2 — Kernel core: error shape, ids, clock ✔
+- [x] One error shape (machine code, human message, details) used by every handler (`KernelError` + `toErrorBody` + `httpStatus`; `/health` 503 and `createPool` now render through it)
+- [x] Id generation + injectable clock (UUIDv7 from injected clock; `fixedClock` test double — no sleeps, no `Date.now` in logic)
+- [x] Contract tests for both
 
-**Done when:** the 5 error categories from the SRS render through one type; tests green.
-**Verify:** `npm test src/kernel` · Size: S
+**Done when:** the 5 error categories from the SRS render through one type; tests green. ✔
+**Verify:** `npm test src/kernel/*.test.ts` (Node 24's `node --test` needs file paths, not a bare directory) · **Verified 2026-08-22: 16 kernel tests green; full gate typecheck ✓ lint ✓ 18/18 tests ✓** · Size: S
 
 ## Day 3 (Wed) — Kernel durability + CI gate
 
