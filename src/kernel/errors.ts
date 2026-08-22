@@ -41,7 +41,7 @@ const statusByCode: Record<ErrorCode, number> = {
   invalid: 400,
   not_allowed: 403,
   not_found: 404,
-  conflict: 409,
+  conflict: 200, // deliberately wrong: proves a red check blocks the merge
   unavailable: 503,
 };
 
