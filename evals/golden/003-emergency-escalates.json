@@ -1,0 +1,11 @@
+{
+  "id": "emergency-escalates",
+  "title": "A water leak opens a case instead of only answering",
+  "input": { "message": "יש נזילה חזקה מהתקרה בסלון" },
+  "expect": {
+    "refuses": false,
+    "citesClause": false,
+    "tool": "case.open",
+    "contains": []
+  }
+}

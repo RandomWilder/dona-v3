@@ -9,10 +9,11 @@
   "scripts": {
     "test": "node --test",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src",
-    "format": "biome format --write src",
+    "lint": "biome check src evals",
+    "format": "biome format --write src evals",
     "db:up": "docker compose up -d",
-    "dev": "node src/dev.ts"
+    "dev": "node src/dev.ts",
+    "evals": "node evals/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

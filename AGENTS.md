@@ -2,6 +2,7 @@
 
 ## Commands
 - Test: `npm test` · Typecheck: `npm run typecheck` · Lint: `npm run lint` · Format: `npm run format`
+- Golden set: `npm run evals` (gates merges alongside the tests; cases in `evals/golden/`)
 - Dev: `npm run db:up && npm run dev` (http://127.0.0.1:3000/health)
 - Clean clone → running: `npm ci && npm run db:up && npm run dev` (Docker required; env defaults come from `.env.example`, no `.env` needed locally)
 - Node 24 type stripping runs `.ts` directly — no build step.
@@ -21,4 +22,5 @@
 ## Boundaries
 - Validate at every edge. Secrets only via env / Secret Manager — never in code, logs, or prompts.
 - Plan mode before touching: kernel, migrations, auth/verification, or 2+ modules in one change.
+- CI (`.github/workflows/ci.yml`) runs typecheck + lint + tests against a Postgres service and the golden set; both checks are required on `main`. Set `REQUIRE_POSTGRES=1` when a run must fail rather than skip the durability suite.
 - Current work: `tasks/todo.md` · Plan: `ROADMAP.md` · Process: `PIPELINE.md`
