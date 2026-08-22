@@ -1,0 +1,80 @@
+name: Deploy
+
+# Runs only after CI reports success, so a red commit can never reach staging —
+# which also covers direct pushes to main, allowed for admins by branch
+# protection.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: staging
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+
+    env:
+      PROJECT: dona-v3
+      REGION: me-west1
+      SERVICE: dona-staging
+      IMAGE: me-west1-docker.pkg.dev/dona-v3/dona/app
+      SHA: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run hands us the default-branch tip by default; deploy the
+          # commit that actually passed CI.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/149055978002/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: deploy-staging@dona-v3.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE:$SHA" -t "$IMAGE:staging" .
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:staging"
+
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:$SHA" \
+            --region "$REGION" \
+            --service-account "app-staging@$PROJECT.iam.gserviceaccount.com" \
+            --add-cloudsql-instances "$PROJECT:$REGION:dona-staging" \
+            --set-secrets "DATABASE_URL=staging-database-url:latest" \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 3 \
+            --quiet
+
+      # "Deployed but silently broken" must fail loudly (PIPELINE.md §5).
+      - name: Smoke test
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+          BODY="$(curl -fsS --retry 5 --retry-all-errors --retry-delay 3 "$URL/health")"
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true'
+          {
+            echo "### Staging deployed"
+            echo ""
+            echo "- URL: $URL"
+            echo "- commit: \`$SHA\`"
+            echo "- health: \`$BODY\`"
+          } >> "$GITHUB_STEP_SUMMARY"

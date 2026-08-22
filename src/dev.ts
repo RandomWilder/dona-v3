@@ -1,7 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { buildApp } from './app.ts';
-import { createPool } from './kernel/db.ts';
-import { migrate } from './kernel/migrate.ts';
+import { startServer } from './boot.ts';
 
 function loadEnvFile(path: string): void {
   let text = '';
@@ -27,30 +25,14 @@ function loadEnvFile(path: string): void {
   }
 }
 
+// Local only — the container reads its configuration from the environment.
 loadEnvFile('.env');
 loadEnvFile('.env.example');
 
-const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as {
-  version: string;
-};
-const port = Number(process.env.PORT ?? 3000);
-
-const pool = createPool();
-// First `docker compose up` needs a few seconds before Postgres accepts connections.
-const deadline = Date.now() + 30_000;
-for (;;) {
-  try {
-    await pool.query('SELECT 1');
-    break;
-  } catch (error) {
-    if (Date.now() >= deadline) {
-      throw error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-}
-await migrate(pool);
-
-const app = buildApp({ pool, version });
-await app.listen({ port, host: '127.0.0.1' });
-console.log(`dona-v3 ${version}: http://127.0.0.1:${port}/health`);
+await startServer({
+  host: process.env.HOST ?? '127.0.0.1',
+  port: Number(process.env.PORT ?? 3000),
+});
+console.log(
+  `dona-v3: http://127.0.0.1:${Number(process.env.PORT ?? 3000)}/health`,
+);

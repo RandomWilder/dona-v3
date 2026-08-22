@@ -13,6 +13,7 @@
     "format": "biome format --write src evals",
     "db:up": "docker compose up -d",
     "dev": "node src/dev.ts",
+    "start": "node src/serve.ts",
     "evals": "node evals/run.ts"
   },
   "devDependencies": {
