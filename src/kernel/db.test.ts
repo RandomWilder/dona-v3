@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createPool } from './db.ts';
+import { KernelError } from './errors.ts';
 
 describe('createPool', () => {
   it('rejects a missing DATABASE_URL with the kernel error shape', () => {
     assert.throws(
       () => createPool({}),
       (error: unknown) =>
-        error instanceof Error &&
-        (error as Error & { code?: string }).code === 'invalid',
+        error instanceof KernelError && error.code === 'invalid',
     );
   });
 

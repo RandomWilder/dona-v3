@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
+import { httpStatus, KernelError, toErrorBody } from './kernel/errors.ts';
 
 export interface AppDeps {
   pool: Pool;
@@ -14,13 +15,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       await deps.pool.query('SELECT 1');
       return { ok: true, version: deps.version, db: 'up' };
     } catch {
-      reply.code(503);
-      return {
-        ok: false,
-        version: deps.version,
-        code: 'unavailable',
-        message: 'database unreachable',
-      };
+      const error = new KernelError('unavailable', 'database unreachable');
+      reply.code(httpStatus(error.code));
+      return { ok: false, version: deps.version, ...toErrorBody(error) };
     }
   });
 
