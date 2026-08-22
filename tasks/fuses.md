@@ -29,6 +29,7 @@
 - Fired: 2026-08-21
 - Status: **partial**
 - Done: GCP project created (`dona-v3`, project number 149055978002) ✓ · billing linked & enabled (acct `017AD7-9B4A59-12DDB4`) ✓ · monthly budget ₪500 with 50/90/100% + forecast alerts, verified via API 2026-08-22 ✓ · OpenAI paid API key ✓
-- Outstanding: OpenAI budget cap confirmed ☐ · domain picked for `app.` / `admin.` ☐
-- Who owes what: Asaf confirms the OpenAI cap and picks the domain.
+- Done also: OpenAI budget confirmed 2026-08-22 — fresh key, prepaid balance > $20 (hard spend ceiling; sufficient for now) ✓
+- Outstanding: domain for `app.` / `admin.` ☐ — **deferred, owed by Dona Dom** (they will provide the domain later; not a blocker, revisit when it arrives — needed by Slice 4.x/5.x for staging/prod URLs at the latest).
+- Who owes what: Dona Dom owes the domain; Asaf raises it with them before week-4 deploy work.
 - Note: budget display name says "dona-v1 — monthly" but targets the correct project (cosmetic). Billing Budget API enabled on dona-v3 for verification.
