@@ -1,0 +1,11 @@
+{
+  "id": "responsibility-cited",
+  "title": "A who-pays question is answered from the lease, with the clause cited",
+  "input": { "message": "מי אחראי על תיקון הדוד בדירה?" },
+  "expect": {
+    "refuses": false,
+    "citesClause": true,
+    "tool": null,
+    "contains": ["סעיף"]
+  }
+}

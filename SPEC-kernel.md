@@ -45,7 +45,7 @@ Conventions inherited from SPEC.md. The kernel holds no business logic — it is
 
 Recorded so they are not relitigated (PIPELINE.md §9, "chat-driven architecture").
 
-1. **Postgres only, no in-memory twins.** dona-v2 maintained parallel memory and Postgres implementations of all three; they drift, and the kernel is Postgres-backed by SPEC.md rule 5. One code path. Tests skip when Postgres is unreachable (`pg-support.ts`) — CI must therefore run with a Postgres service, or the durability suite silently no-ops.
+1. **Postgres only, no in-memory twins.** dona-v2 maintained parallel memory and Postgres implementations of all three; they drift, and the kernel is Postgres-backed by SPEC.md rule 5. One code path. Tests skip when Postgres is unreachable (`pg-support.ts`) — CI must therefore run with a Postgres service, or the durability suite silently no-ops. `REQUIRE_POSTGRES=1` makes that a failure instead of an assumption: with it set, an unreachable database throws `unavailable` rather than returning `null`. CI sets it; local runs do not, so a developer without Docker still gets a useful test run.
 2. **No sleeps, in code or tests.** dona-v2 busy-waited 20ms on idempotency contention and polled with `setTimeout` in tests. Contention returns `conflict`; tests drive `tick()` and advance a `fixedClock`.
 3. **The clock is a parameter, not `NOW()`.** Time in SQL comes from the injected clock, so deadline behavior is provable without waiting for it.
 4. **Explicit `state` on idempotency keys.** dona-v2 used a null `result` to mean "in flight", which cannot distinguish that from a command whose result is legitimately null.

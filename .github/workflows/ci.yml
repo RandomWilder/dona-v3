@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+
+    services:
+      # Same image as docker-compose.yml, so CI and local run one engine.
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dona
+          POSTGRES_USER: dona
+          POSTGRES_PASSWORD: dona
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dona -d dona"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://dona:dona@127.0.0.1:5432/dona
+      # Without this the durability suite would skip itself and the job would
+      # pass by running nothing (SPEC-kernel.md, Decisions #1).
+      REQUIRE_POSTGRES: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  evals:
+    name: evals
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # Separate job so a golden-set regression reads as a quality failure,
+      # not a broken build (PIPELINE.md §5).
+      - run: npm run evals

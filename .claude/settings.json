@@ -5,6 +5,7 @@
       "Bash(npm run typecheck:*)",
       "Bash(npm run lint:*)",
       "Bash(npm run format:*)",
+      "Bash(npm run evals:*)",
       "Bash(node --test:*)",
       "Bash(npx biome:*)",
       "Bash(git status:*)",
