@@ -10,10 +10,10 @@
 ## Day 1 (Mon) — Repo, context layer, external fuses
 
 ### Slice 1.1 — Light the external fuses ☐
-Everything with a lead time you don't control, fired before writing code.
-- [ ] Meta WhatsApp Business verification started (longest fuse)
-- [ ] SMS provider account created (Twilio first choice); one test OTP sent to your own Israeli number
-- [ ] Data request sent to Dona Dom: lease PDFs, tenant↔unit↔phone table, vendor list, deductible rules, fault Q&A doc
+Everything with a lead time you don't control, fired before writing code. Live status per fuse: `tasks/fuses.md`.
+- [x] Meta WhatsApp Business verification started (longest fuse)
+- [x] SMS provider account created (Twilio first choice); one test OTP sent to your own Israeli number
+- [x] Data request sent to Dona Dom: lease PDFs, tenant↔unit↔phone table, vendor list, deductible rules, fault Q&A doc (sent + acknowledged 2026-08-22 — docs arriving by apartment, phones included)
 - [ ] GCP project + billing alerts; OpenAI key with budget cap; domain picked for `app.` / `admin.`
 
 **Done when:** all four fired and logged (a note per item: date, status, who owes what).

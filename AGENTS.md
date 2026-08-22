@@ -2,7 +2,8 @@
 
 ## Commands
 - Test: `npm test` · Typecheck: `npm run typecheck` · Lint: `npm run lint` · Format: `npm run format`
-- Dev: `npm run db:up && npm run dev` (http://127.0.0.1:3000)
+- Dev: `npm run db:up && npm run dev` (http://127.0.0.1:3000/health)
+- Clean clone → running: `npm ci && npm run db:up && npm run dev` (Docker required; env defaults come from `.env.example`, no `.env` needed locally)
 - Node 24 type stripping runs `.ts` directly — no build step.
 
 ## Architecture
