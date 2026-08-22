@@ -32,13 +32,13 @@ Everything with a lead time you don't control, fired before writing code. Live s
 
 ## Day 2 (Tue) — Local runtime + kernel core
 
-### Slice 2.1 — Database up, migrations real ☐
-- [ ] `docker compose up` → Postgres 16 + pgvector locally
-- [ ] Migration runner (ordered `.sql` files, applied-migrations table, idempotent re-run)
-- [ ] Migration 0001 (kernel tables), `npm run dev` serves `/health` with version + db check
+### Slice 2.1 — Database up, migrations real ✔
+- [x] `docker compose up` → Postgres 16 + pgvector locally (pgvector/pgvector:pg16, host port 5434)
+- [x] Migration runner (ordered `.sql` files, applied-migrations table, idempotent re-run — proven by test + double dev run)
+- [x] Migration 0001 (enables pgvector; kernel *tables* land with their contract tests in 3.1), `npm run dev` serves `/health` with version + db check (503 + error shape when db down)
 
-**Done when:** clean clone → running app in under 5 minutes, documented in AGENTS.md.
-**Verify:** delete the clone, re-clone, time it. · Size: M
+**Done when:** clean clone → running app in under 5 minutes, documented in AGENTS.md. ✔
+**Verify:** delete the clone, re-clone, time it. · **Verified 2026-08-22: fresh GitHub clone → npm ci → db up → `/health` ok in 6 seconds** (warm docker image + npm cache; cold machine adds the ~100MB image pull, still far under 5 min). · Size: M
 
 ### Slice 2.2 — Kernel core: error shape, ids, clock ☐
 - [ ] One error shape (machine code, human message, details) used by every handler
