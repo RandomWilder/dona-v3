@@ -58,15 +58,14 @@ Everything with a lead time you don't control, fired before writing code. Live s
 **Done when:** the three tests above green; patterns match dona-v2's kernel (reference, not copy-paste). ✔ — v2 read as reference; 5 deliberate divergences recorded in `SPEC-kernel.md` §Decisions (Postgres-only, no sleeps anywhere, clock as a bound SQL parameter, explicit `state` column, failed commands release their key).
 **Verify:** `npm test src/kernel/*.test.ts` incl. restart test. · **Verified 2026-08-22: 32 kernel tests green (incl. restart + two-runner race); full gate typecheck ✓ lint ✓ 34/34 ✓; migration 0002 applied via `npm run dev`, `/health` ok, all four tables present** · Size: M
 
-> Carried into 3.2: CI must run these with a Postgres service — `pg-support.ts` skips the durability suite when the DB is unreachable, so without one the whole slice would silently no-op in the pipeline.
+### Slice 3.2 — CI gate + eval stub ✔
+- [x] `ci.yml`: typecheck + lint + tests on every PR against a `pgvector/pg16` service; `gate` + `evals` required on `main` (closes the required-check item left open in 1.2)
+- [x] Carried from 3.1 — handled: `REQUIRE_POSTGRES=1` turns an unreachable database from a skip into an `unavailable` failure, so CI cannot report green having run none of the durability suite. Local runs still skip. Both branches tested.
+- [x] `evals/` runner stub + 3 golden cases wired into CI; grades behaviour (tool called, clause cited, refusal), not final text. Subject is an explicit placeholder until the channel agent (week 3) — so `runner.test.ts` grades a wrong subject and asserts the run comes back red.
+- [x] Proved it: PR #1 green, PR #2 deliberately broken → `gate` red, merge blocked
 
-### Slice 3.2 — CI gate + eval stub ☐
-- [ ] `ci.yml`: typecheck + lint + tests on every PR; red blocks merge
-- [ ] `evals/` runner stub + 3 trivial golden cases wired into CI (the gate exists from commit one)
-- [ ] Prove it: open a PR with a broken test → blocked; fix → merges
-
-**Done when:** the broken-PR screenshot exists; evals job runs (even if trivially).
-**Verify:** the deliberately-broken PR in repo history. · Size: S
+**Done when:** the broken-PR screenshot exists; evals job runs (even if trivially). ✔ — evidence is `tasks/evidence/3.2-broken-pr.md` (check results + GitHub's own merge state) rather than a screenshot; `mergeStateStatus: BLOCKED` with `mergeable: MERGEABLE` is stronger proof than a picture of a red tick.
+**Verify:** the deliberately-broken PR in repo history. · **Verified 2026-08-22: [PR #2](https://github.com/RandomWilder/dona-v3/pull/2) closed unmerged — `gate` red on a 409→200 break, merge blocked by the required check; [PR #1](https://github.com/RandomWilder/dona-v3/pull/1) green with `tests 40 / pass 40 / skipped 0`, so the durability suite ran for real in CI** · Size: S
 
 ## Day 4 (Thu) — Deploy pipeline, both directions
 
