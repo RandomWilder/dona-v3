@@ -70,8 +70,8 @@
     figcaption::before { content: 'scroll to see the full drawing → '; color: var(--ochre); }
   }
 
-  /* --- drawing type --- */
   .t-eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.16em; fill: var(--muted); }
+  .t-eyebrow-hi { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.16em; fill: var(--ochre); }
   .t-title { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 25px; font-weight: 600; fill: var(--ink); }
   .t-box { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 19px; font-weight: 600; fill: var(--ink); }
   .t-box-dim { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 19px; font-weight: 600; fill: var(--muted); }
@@ -80,14 +80,12 @@
   .t-tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.12em; fill: var(--teal); }
   .t-tab { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.12em; fill: var(--tab-ink); }
   .t-stat { font-family: 'IBM Plex Mono', monospace; font-size: 27px; font-weight: 500; fill: var(--teal); }
-  .t-glyph { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 21px; font-weight: 600; fill: var(--ochre); }
-  .t-glyph-sm { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 12px; font-weight: 600; fill: var(--ochre); }
+  .t-glyph { font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 19px; font-weight: 600; fill: var(--ochre); }
 
-  /* --- drawing shapes --- */
   .card { fill: var(--surface); stroke: var(--ochre); stroke-width: 2; }
+  .gate { fill: var(--ochre-soft); stroke: var(--ochre); stroke-width: 2; }
   .tab { fill: var(--ochre); }
   .badge { fill: var(--ochre-soft); }
-  .badge-sm { fill: var(--ochre-soft); stroke: var(--ochre); stroke-width: 1; }
   .inset { fill: var(--inset); }
   .built { fill: var(--teal-soft); stroke: var(--teal); stroke-width: 1.5; }
   .future { fill: none; stroke: var(--dashline); stroke-width: 1.5; stroke-dasharray: 6 5; }
@@ -95,13 +93,14 @@
   .bus { stroke: var(--ink); stroke-width: 2; opacity: 0.55; }
   .rule { stroke: var(--dashline); stroke-width: 1; }
   .plate { fill: var(--paper); }
-  .clockface { fill: none; stroke: var(--ochre); stroke-width: 1.6; }
+  .glyphline { stroke: var(--ochre); stroke-width: 1.8; stroke-linecap: round; }
+  .clockface { fill: none; stroke: var(--ochre); stroke-width: 1.8; }
 </style>
 
 <figure>
   <div class="scroll">
-    <svg viewBox="0 0 1040 772" role="img"
-      aria-label="Foundation plan: a records vault and written guardrails support three new kernel primitives added today — one error language, one number per record, and a controlled clock — which in turn feed the next layer of retry-safe actions, an audit trail, and deadlines that survive restarts.">
+    <svg viewBox="0 0 1040 830" role="img"
+      aria-label="Foundation plan at end of day 3: blueprints, the records vault and the kernel primitives now stand; today added three durability guarantees — never twice, always recorded, never forgotten — plus a gate that blocks any change failing typecheck, lint, 40 tests or 3 golden cases; only a green gate deploys to day four's staging and production.">
       <defs>
         <marker id="up" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <polygon points="0,0 10,5 0,10" fill="var(--muted)"/>
@@ -111,11 +110,11 @@
         </pattern>
       </defs>
 
-      <rect x="0" y="0" width="1040" height="772" fill="url(#grid)"/>
+      <rect x="0" y="0" width="1040" height="830" fill="url(#grid)"/>
 
       <!-- header -->
       <text class="t-eyebrow" x="40" y="34">DONA DOM · TENANCY OS · WEEK 1</text>
-      <text class="t-title" x="40" y="64">Foundation plan — end of day 2</text>
+      <text class="t-title" x="40" y="64">Foundation plan — end of day 3</text>
 
       <rect class="built" x="700" y="24" width="13" height="13" rx="2"/>
       <text class="t-mono" x="721" y="35">standing</text>
@@ -124,126 +123,121 @@
       <rect class="future" x="908" y="24" width="13" height="13" rx="2"/>
       <text class="t-mono" x="929" y="35">next</text>
 
-      <!-- NEXT band -->
-      <text class="t-eyebrow" x="40" y="100">NEXT — DAY 3</text>
+      <!-- NEXT band: day 4 -->
+      <text class="t-eyebrow" x="40" y="96">NEXT — DAY 4</text>
 
-      <rect class="future" x="40" y="112" width="306" height="106" rx="8"/>
-      <text class="t-box-dim" x="64" y="149">Retry-safe actions</text>
-      <text class="t-sub" x="64" y="172">a repeated request can’t double-book</text>
-      <text class="t-mono" x="64" y="200">USES</text>
-      <circle class="badge-sm" cx="112" cy="196" r="11"/>
-      <text class="t-glyph-sm" x="112" y="196" text-anchor="middle" dominant-baseline="central">!</text>
-      <circle class="badge-sm" cx="140" cy="196" r="11"/>
-      <text class="t-glyph-sm" x="140" y="196" text-anchor="middle" dominant-baseline="central">#</text>
+      <rect class="future" x="40" y="108" width="470" height="97" rx="8"/>
+      <text class="t-box-dim" x="64" y="147">Staging, automatic</text>
+      <text class="t-sub" x="64" y="172">merge a change and it deploys itself, migrations included</text>
 
-      <rect class="future" x="367" y="112" width="306" height="106" rx="8"/>
-      <text class="t-box-dim" x="391" y="149">Audit trail</text>
-      <text class="t-sub" x="391" y="172">who did what, to what, and when</text>
-      <text class="t-mono" x="391" y="200">USES</text>
-      <circle class="badge-sm" cx="439" cy="196" r="11"/>
-      <text class="t-glyph-sm" x="439" y="196" text-anchor="middle" dominant-baseline="central">#</text>
-      <circle class="badge-sm" cx="467" cy="196" r="11"/>
-      <circle class="clockface" cx="467" cy="196" r="5.5"/>
-      <line class="clockface" x1="467" y1="196" x2="467" y2="192.5"/>
-      <line class="clockface" x1="467" y1="196" x2="469.5" y2="197.5"/>
+      <rect class="future" x="530" y="108" width="470" height="97" rx="8"/>
+      <text class="t-box-dim" x="554" y="147">Production on a tag</text>
+      <text class="t-sub" x="554" y="172">with a one-command rollback, rehearsed on purpose</text>
 
-      <rect class="future" x="694" y="112" width="306" height="106" rx="8"/>
-      <text class="t-box-dim" x="718" y="149">Deadlines that hold</text>
-      <text class="t-sub" x="718" y="172">timers keep running after a restart</text>
-      <text class="t-mono" x="718" y="200">USES</text>
-      <circle class="badge-sm" cx="766" cy="196" r="11"/>
-      <circle class="clockface" cx="766" cy="196" r="5.5"/>
-      <line class="clockface" x1="766" y1="196" x2="766" y2="192.5"/>
-      <line class="clockface" x1="766" y1="196" x2="768.5" y2="197.5"/>
-      <circle class="badge-sm" cx="794" cy="196" r="11"/>
-      <text class="t-glyph-sm" x="794" y="196" text-anchor="middle" dominant-baseline="central">#</text>
+      <!-- the gate is the only way up -->
+      <line class="wire" x1="275" y1="232" x2="275" y2="211" marker-end="url(#up)"/>
+      <line class="wire" x1="765" y1="232" x2="765" y2="211" marker-end="url(#up)"/>
+      <line class="wire" x1="275" y1="232" x2="765" y2="232"/>
+      <line class="wire" x1="520" y1="250" x2="520" y2="232"/>
+      <text class="t-eyebrow-hi" x="40" y="236">ONLY A GREEN GATE DEPLOYS</text>
 
-      <!-- upper bus: today's three feed everything above -->
-      <line class="wire" x1="193" y1="262" x2="193" y2="224" marker-end="url(#up)"/>
-      <line class="wire" x1="520" y1="262" x2="520" y2="224" marker-end="url(#up)"/>
-      <line class="wire" x1="847" y1="262" x2="847" y2="224" marker-end="url(#up)"/>
-      <line class="bus" x1="120" y1="262" x2="920" y2="262"/>
-      <rect class="plate" x="356" y="250" width="330" height="24"/>
-      <text class="t-mono" x="521" y="266" text-anchor="middle">EVERY FUTURE MODULE DRAWS FROM THESE</text>
-      <line class="wire" x1="193" y1="326" x2="193" y2="262"/>
-      <line class="wire" x1="520" y1="326" x2="520" y2="262"/>
-      <line class="wire" x1="847" y1="326" x2="847" y2="262"/>
+      <!-- THE GATE -->
+      <rect class="gate" x="40" y="250" width="960" height="80" rx="10"/>
+      <rect class="tab" x="58" y="239" width="112" height="21" rx="5"/>
+      <text class="t-tab" x="70" y="254">ADDED TODAY</text>
+      <text class="t-box" x="64" y="294">The gate</text>
+      <text class="t-sub" x="64" y="316">nothing reaches the main line without passing</text>
+      <text class="t-mono" x="976" y="290" text-anchor="end">typecheck · lint · 40 tests · 3 golden cases</text>
+      <text class="t-mono" x="976" y="310" text-anchor="end">proven: PR #2 broke one test on purpose → merge blocked</text>
+
+      <!-- today's three pass through the gate -->
+      <line class="wire" x1="193" y1="372" x2="193" y2="336" marker-end="url(#up)"/>
+      <line class="wire" x1="520" y1="372" x2="520" y2="336" marker-end="url(#up)"/>
+      <line class="wire" x1="847" y1="372" x2="847" y2="336" marker-end="url(#up)"/>
 
       <!-- TODAY: card 1 -->
-      <rect class="card" x="40" y="326" width="306" height="184" rx="10"/>
-      <rect class="tab" x="58" y="315" width="112" height="21" rx="5"/>
-      <text class="t-tab" x="70" y="330">ADDED TODAY</text>
-      <circle class="badge" cx="86" cy="382" r="22"/>
-      <text class="t-glyph" x="86" y="382" text-anchor="middle" dominant-baseline="central">!</text>
-      <text class="t-box" x="122" y="389">One error language</text>
-      <text class="t-sub" x="64" y="424">Every part reports trouble in the</text>
-      <text class="t-sub" x="64" y="442">same five words — and only those.</text>
-      <rect class="inset" x="64" y="454" width="258" height="42" rx="6"/>
-      <text class="t-mono" x="76" y="471">not found · not allowed · taken</text>
-      <text class="t-mono" x="76" y="487">invalid · temporarily down</text>
+      <rect class="card" x="40" y="372" width="306" height="184" rx="10"/>
+      <rect class="tab" x="58" y="361" width="112" height="21" rx="5"/>
+      <text class="t-tab" x="70" y="376">ADDED TODAY</text>
+      <circle class="badge" cx="86" cy="428" r="22"/>
+      <text class="t-glyph" x="86" y="428" text-anchor="middle" dominant-baseline="central">1×</text>
+      <text class="t-box" x="122" y="435">Never twice</text>
+      <text class="t-sub" x="64" y="470">A repeated request returns the first</text>
+      <text class="t-sub" x="64" y="488">answer — never a second booking.</text>
+      <rect class="inset" x="64" y="500" width="258" height="42" rx="6"/>
+      <text class="t-mono" x="76" y="517">retry → the first result</text>
+      <text class="t-mono" x="76" y="533">still running → conflict</text>
 
       <!-- TODAY: card 2 -->
-      <rect class="card" x="367" y="326" width="306" height="184" rx="10"/>
-      <rect class="tab" x="385" y="315" width="112" height="21" rx="5"/>
-      <text class="t-tab" x="397" y="330">ADDED TODAY</text>
-      <circle class="badge" cx="413" cy="382" r="22"/>
-      <text class="t-glyph" x="413" y="382" text-anchor="middle" dominant-baseline="central">#</text>
-      <text class="t-box" x="449" y="389">One number per record</text>
-      <text class="t-sub" x="391" y="424">Every case, job and offer gets a</text>
-      <text class="t-sub" x="391" y="442">unique, time-stamped id.</text>
-      <rect class="inset" x="391" y="454" width="258" height="42" rx="6"/>
-      <text class="t-mono" x="403" y="471">0198e2f1-4c7a-7b31-9d02</text>
-      <text class="t-mono" x="403" y="487">newest always sorts last</text>
+      <rect class="card" x="367" y="372" width="306" height="184" rx="10"/>
+      <rect class="tab" x="385" y="361" width="112" height="21" rx="5"/>
+      <text class="t-tab" x="397" y="376">ADDED TODAY</text>
+      <circle class="badge" cx="413" cy="428" r="22"/>
+      <line class="glyphline" x1="404" y1="422" x2="422" y2="422"/>
+      <line class="glyphline" x1="404" y1="428" x2="422" y2="428"/>
+      <line class="glyphline" x1="404" y1="434" x2="416" y2="434"/>
+      <text class="t-box" x="449" y="435">Always recorded</text>
+      <text class="t-sub" x="391" y="470">Every command writes who did what,</text>
+      <text class="t-sub" x="391" y="488">and how it ended.</text>
+      <rect class="inset" x="391" y="500" width="258" height="42" rx="6"/>
+      <text class="t-mono" x="403" y="517">actor · action · inputs</text>
+      <text class="t-mono" x="403" y="533">outcome — failures too</text>
 
       <!-- TODAY: card 3 -->
-      <rect class="card" x="694" y="326" width="306" height="184" rx="10"/>
-      <rect class="tab" x="712" y="315" width="112" height="21" rx="5"/>
-      <text class="t-tab" x="724" y="330">ADDED TODAY</text>
-      <circle class="badge" cx="740" cy="382" r="22"/>
-      <circle class="clockface" cx="740" cy="382" r="10"/>
-      <line class="clockface" x1="740" y1="382" x2="740" y2="375"/>
-      <line class="clockface" x1="740" y1="382" x2="745" y2="385"/>
-      <text class="t-box" x="776" y="389">One clock, ours to move</text>
-      <text class="t-sub" x="718" y="424">The system asks a clock we hand it,</text>
-      <text class="t-sub" x="718" y="442">never the wall clock.</text>
-      <rect class="inset" x="718" y="454" width="258" height="42" rx="6"/>
-      <text class="t-mono" x="730" y="471">“48 hours later” → 0.001s</text>
-      <text class="t-mono" x="730" y="487">deadlines provable pre-launch</text>
+      <rect class="card" x="694" y="372" width="306" height="184" rx="10"/>
+      <rect class="tab" x="712" y="361" width="112" height="21" rx="5"/>
+      <text class="t-tab" x="724" y="376">ADDED TODAY</text>
+      <circle class="badge" cx="740" cy="428" r="22"/>
+      <circle class="clockface" cx="740" cy="428" r="10"/>
+      <line class="clockface" x1="740" y1="428" x2="740" y2="421"/>
+      <line class="clockface" x1="740" y1="428" x2="745" y2="431"/>
+      <text class="t-box" x="776" y="435">Never forgotten</text>
+      <text class="t-sub" x="718" y="470">Deadlines and follow-ups resume</text>
+      <text class="t-sub" x="718" y="488">after a crash or a restart.</text>
+      <rect class="inset" x="718" y="500" width="258" height="42" rx="6"/>
+      <text class="t-mono" x="730" y="517">restart → work resumes</text>
+      <text class="t-mono" x="730" y="533">two runners → one winner</text>
 
-      <!-- lower bus: foundation supports today's three -->
-      <line class="wire" x1="193" y1="538" x2="193" y2="522" marker-end="url(#up)"/>
-      <line class="wire" x1="520" y1="538" x2="520" y2="522" marker-end="url(#up)"/>
-      <line class="wire" x1="847" y1="538" x2="847" y2="522" marker-end="url(#up)"/>
-      <line class="bus" x1="120" y1="538" x2="920" y2="538"/>
-      <text class="t-eyebrow" x="40" y="542">STANDS ON</text>
-      <line class="wire" x1="275" y1="576" x2="275" y2="538"/>
-      <line class="wire" x1="765" y1="576" x2="765" y2="538"/>
+      <!-- stands on -->
+      <line class="wire" x1="193" y1="584" x2="193" y2="562" marker-end="url(#up)"/>
+      <line class="wire" x1="520" y1="584" x2="520" y2="562" marker-end="url(#up)"/>
+      <line class="wire" x1="847" y1="584" x2="847" y2="562" marker-end="url(#up)"/>
+      <line class="bus" x1="120" y1="584" x2="920" y2="584"/>
+      <text class="t-eyebrow" x="40" y="588">STANDS ON</text>
+      <line class="wire" x1="193" y1="620" x2="193" y2="584"/>
+      <line class="wire" x1="520" y1="620" x2="520" y2="584"/>
+      <line class="wire" x1="847" y1="620" x2="847" y2="584"/>
 
-      <!-- FOUNDATION band -->
-      <rect class="built" x="40" y="576" width="470" height="90" rx="8"/>
-      <text class="t-box" x="64" y="613">Records vault</text>
-      <text class="t-sub" x="64" y="636">Postgres, versioned and health-checked</text>
-      <text class="t-tag" x="486" y="600" text-anchor="end">DAY 2</text>
+      <!-- FOUNDATION -->
+      <rect class="built" x="40" y="620" width="306" height="90" rx="8"/>
+      <text class="t-box" x="64" y="657">Blueprints</text>
+      <text class="t-sub" x="64" y="680">written specs, rules, boundaries</text>
+      <text class="t-tag" x="322" y="644" text-anchor="end">DAY 1</text>
 
-      <rect class="built" x="530" y="576" width="470" height="90" rx="8"/>
-      <text class="t-box" x="554" y="613">Blueprints &amp; guardrails</text>
-      <text class="t-sub" x="554" y="636">written specs, module boundaries, rules</text>
-      <text class="t-tag" x="976" y="600" text-anchor="end">DAY 1</text>
+      <rect class="built" x="367" y="620" width="306" height="90" rx="8"/>
+      <text class="t-box" x="391" y="657">Records vault</text>
+      <text class="t-sub" x="391" y="680">Postgres, versioned, health-checked</text>
+      <text class="t-tag" x="649" y="644" text-anchor="end">DAY 2</text>
+
+      <rect class="built" x="694" y="620" width="306" height="90" rx="8"/>
+      <text class="t-box" x="718" y="657">Kernel primitives</text>
+      <text class="t-sub" x="718" y="680">one error language · numbers · clock</text>
+      <text class="t-tag" x="976" y="644" text-anchor="end">DAY 2</text>
 
       <!-- proof strip -->
-      <line class="rule" x1="40" y1="704" x2="1000" y2="704"/>
-      <text class="t-stat" x="40" y="742">18/18</text>
-      <text class="t-mono" x="128" y="734">automated checks</text>
-      <text class="t-mono" x="128" y="748">green, every run</text>
+      <line class="rule" x1="40" y1="750" x2="1000" y2="750"/>
+      <text class="t-stat" x="40" y="788">40/40</text>
+      <text class="t-mono" x="128" y="780">checks green,</text>
+      <text class="t-mono" x="128" y="794">none skipped</text>
 
-      <text class="t-stat" x="367" y="742">16</text>
-      <text class="t-mono" x="412" y="734">written today — these</text>
-      <text class="t-mono" x="412" y="748">promises can’t silently break</text>
+      <text class="t-stat" x="367" y="788">27s</text>
+      <text class="t-mono" x="422" y="780">for the full gate</text>
+      <text class="t-mono" x="422" y="794">to run in CI</text>
 
-      <text class="t-stat" x="694" y="742">6s</text>
-      <text class="t-mono" x="739" y="734">from clean copy to a</text>
-      <text class="t-mono" x="739" y="748">running system</text>
+      <text class="t-stat" x="694" y="788">#2</text>
+      <text class="t-mono" x="738" y="780">the pull request</text>
+      <text class="t-mono" x="738" y="794">blocked on purpose</text>
     </svg>
   </div>
-  <figcaption>Days 1–2 · nothing here is tenant-facing yet — each layer is built once, and everything above it stands on it.</figcaption>
+  <figcaption>Days 1–3 · still nothing tenant-facing — day 4 puts this on a real URL.</figcaption>
 </figure>

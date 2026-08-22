@@ -29,6 +29,8 @@ Reuse `template.html` and re-label it. The grammar, in order:
 
 Arrows all point **up**; direction is consistent so it never needs a legend.
 
+**When a slice adds something that is not a layer** — a CI gate, a verification step, anything every change must pass rather than stand on — do not force it into a band. Draw it as a full-width strip across the path, with the bands below feeding into it and a single labelled arrow leaving the top (`ONLY A GREEN GATE DEPLOYS`). A perimeter drawn as a layer tells a lie about how it works.
+
 ## Visual system
 
 Tokens are defined at the top of `template.html` — copy them wholesale, all three theme blocks (`:root`, the `prefers-color-scheme` guard, and `[data-theme="dark"]`).
