@@ -50,13 +50,15 @@ Everything with a lead time you don't control, fired before writing code. Live s
 
 ## Day 3 (Wed) — Kernel durability + CI gate
 
-### Slice 3.1 — Idempotency, audit, durable work ☐
-- [ ] Idempotency store keyed on business intent (retried command returns first result — proven by test)
-- [ ] Audit log: every command writes actor + action + inputs + outcome
-- [ ] Outbox + durable work runner on Postgres (timers survive restart — test kills and restarts)
+### Slice 3.1 — Idempotency, audit, durable work ✔
+- [x] Idempotency store keyed on business intent (retried command returns first result; concurrent duplicate → `conflict`; failed command stays retryable; stale claim reclaimable)
+- [x] Audit log: `around()` records actor + action + inputs + outcome on both success and failure, then re-throws
+- [x] Outbox + durable work runner on Postgres (drivable `tick()`, `FOR UPDATE SKIP LOCKED`, exponential backoff; restart proven by a fresh runner picking up work a discarded one scheduled)
 
-**Done when:** the three tests above green; patterns match dona-v2's kernel (reference, not copy-paste).
-**Verify:** `npm test src/kernel` incl. restart test. · Size: M
+**Done when:** the three tests above green; patterns match dona-v2's kernel (reference, not copy-paste). ✔ — v2 read as reference; 5 deliberate divergences recorded in `SPEC-kernel.md` §Decisions (Postgres-only, no sleeps anywhere, clock as a bound SQL parameter, explicit `state` column, failed commands release their key).
+**Verify:** `npm test src/kernel/*.test.ts` incl. restart test. · **Verified 2026-08-22: 32 kernel tests green (incl. restart + two-runner race); full gate typecheck ✓ lint ✓ 34/34 ✓; migration 0002 applied via `npm run dev`, `/health` ok, all four tables present** · Size: M
+
+> Carried into 3.2: CI must run these with a Postgres service — `pg-support.ts` skips the durability suite when the DB is unreachable, so without one the whole slice would silently no-op in the pipeline.
 
 ### Slice 3.2 — CI gate + eval stub ☐
 - [ ] `ci.yml`: typecheck + lint + tests on every PR; red blocks merge
