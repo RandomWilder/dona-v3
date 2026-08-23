@@ -5,7 +5,19 @@
 **Week goal:** the real pilot building lives in the system; staff access is role-gated and audited.
 **Week demo (Friday):** log in as viewer and as admin — different powers, proven by a test rather than by hidden buttons; the audit trail shows both sessions; the pilot building is browsable on staging.
 
-Previous week: `tasks/week-1.md` (closed — `v0.1.0` live on prod behind a login).
+Previous week: `tasks/week-1.md` (closed — a login-gated shell live on prod).
+
+### Done before day 6 — build identity on `/health` ✔
+Found in the week-1 sign-off audit: prod served the `v0.1.0` release while `/health`
+reported `0.1.0-dev`, so nothing from outside could tell a release from a hand-rolled
+deploy. `version` now comes from `APP_VERSION`, injected by the pipeline that deployed
+it — the tag on prod, the short commit on staging — and the fallback still ends in
+`-dev`, so a deployed URL saying `-dev` now means the injection did not happen.
+**Verified 2026-08-23:** staging reports `cb49bc7`, prod reports `v0.1.1`
+([release](https://github.com/RandomWilder/dona-v3/actions/runs/32641913957),
+revision `dona-prod-00004-zvs`), all three secrets intact after the env-var change,
+and prod's boot line reads `staff seed: already exists` — the seeder's idempotency
+proving itself on a real second deploy rather than in a test.
 
 ---
 
