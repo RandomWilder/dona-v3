@@ -93,14 +93,14 @@ Everything with a lead time you don't control, fired before writing code. Live s
 
 ## Day 5 (Fri) — Shells, auth stub, checkpoint
 
-### Slice 5.1 — Presentation shell (Hebrew RTL) ☐ *(staging live; awaiting the phone check)*
+### Slice 5.1 — Presentation shell (Hebrew RTL) ✔
 - [x] `tokens.css` ported from dona-v2 verbatim (Biome reformatted whitespace only), Heebo + IBM Plex Mono self-hosted with their OFL licences, RTL logical properties throughout
 - [x] Admin shell at `/admin` — dark rail on the inline-start edge, the seven ROADMAP week-2 destinations, three widths (sidebar ≥1100 / icon rail 840–1099 / drawer ≤839); every destination an empty state, no fake tables. Widget shell at `/t/:link` — mobile-first column, composer `disabled` and saying so
 - [x] Served by the app, no new runtime dependency: `kernel/ui/assets.ts` reads every asset once at registration and matches font names against a fixed allowlist. Both modules reached through `contract.ts`, so week 2's commands land behind a seam that already exists
 - [x] Carried in, because the new routes exposed it: Fastify's own 404 echoed the requested path and its 500 carried the thrown message — both now render through `toErrorBody`. Gap recorded in `SPEC-kernel.md` for the first route that takes a body
 
 **Done when:** both shells load on your phone from the staging URL, styled, RTL-correct.
-**Verify:** phone screenshot. · **Deployed 2026-08-23: [PR #4](https://github.com/RandomWilder/dona-v3/pull/4) → [CI green](https://github.com/RandomWilder/dona-v3/actions/runs/32630678472) → [Deploy green](https://github.com/RandomWilder/dona-v3/actions/runs/32630702647) → revision `dona-staging-00007-bm4`. https://dona-staging-ydabrrmura-zf.a.run.app/admin and `/t/demo` serve in ~0.2s; Heebo loads from our own origin (not a fallback); a `<script>` in the link is not reflected. CI: `tests 51 / pass 51 / skipped 0`. Full record: `tasks/evidence/5.1-shells-live.md`. Ticks when the phone screenshot is taken.** · Size: M
+**Verify:** phone screenshot. · **Deployed 2026-08-23: [PR #4](https://github.com/RandomWilder/dona-v3/pull/4) → [CI green](https://github.com/RandomWilder/dona-v3/actions/runs/32630678472) → [Deploy green](https://github.com/RandomWilder/dona-v3/actions/runs/32630702647) → revision `dona-staging-00007-bm4`. https://dona-staging-ydabrrmura-zf.a.run.app/admin and `/t/demo` serve in ~0.2s; Heebo loads from our own origin (not a fallback); a `<script>` in the link is not reflected. CI: `tests 51 / pass 51 / skipped 0`. **Phone-verified 2026-08-23 on an Android device over mobile data**: both shells styled and RTL-correct, Heebo rendering, drawer opening from the top-right with all seven destinations, composer dead. Laptop browser confirmed to match. Full record: `tasks/evidence/5.1-shells-live.md`.** · Size: M
 
 ### Slice 5.2 — Staff login stub + Friday checkpoint ☐
 - [ ] Email+password session login (argon2) gating `/admin` — one seeded admin user, roles come week 2
