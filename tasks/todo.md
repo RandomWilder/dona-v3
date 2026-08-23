@@ -14,9 +14,10 @@ Everything with a lead time you don't control, fired before writing code. Live s
 - [x] Meta WhatsApp Business verification started (longest fuse)
 - [x] SMS provider account created (Twilio first choice); one test OTP sent to your own Israeli number
 - [x] Data request sent to Dona Dom: lease PDFs, tenant↔unit↔phone table, vendor list, deductible rules, fault Q&A doc (sent + acknowledged 2026-08-22 — docs arriving by apartment, phones included)
-- [ ] GCP project + billing alerts; OpenAI key with budget cap; domain picked for `app.` / `admin.`
+- [x] GCP project + billing alerts (₪500/mo, alerting 50/90/100%) ✓ · OpenAI key with budget cap ✓ — **proven in anger by slice 4.1**, which provisioned and deployed on this project
+- [ ] Domain picked for `app.` / `admin.` — **owed by Dona Dom**, not blocking: staging runs on the Cloud Run `*.run.app` URL. Needed only when custom domains are mapped (5.x / production polish)
 
-**Done when:** all four fired and logged (a note per item: date, status, who owes what).
+**Done when:** all four fired and logged (a note per item: date, status, who owes what). — three closed; only the Dona Dom domain is outstanding.
 **Verify:** the test SMS arrived on your phone. · Size: S (no code)
 
 ### Slice 1.2 — Repo + agent context layer ✔
