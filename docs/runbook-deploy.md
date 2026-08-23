@@ -69,6 +69,22 @@ deploy, no change in production.
 so the next tag release un-pins automatically. If you ever deploy by hand,
 you own this step yourself.
 
+## What `/health` is telling you
+
+`version` is the **build's identity**, injected by whichever pipeline deployed it:
+
+| where | `version` reads | injected by |
+|---|---|---|
+| prod | the release tag, e.g. `v0.1.0` | `release.yml`, from the tag |
+| staging | the short commit, e.g. `4ce886f` | `deploy.yml`, from the merged SHA |
+| local | `0.1.0-dev` from `package.json` | nothing — that is the fallback |
+
+So a deployed URL reporting anything ending in **`-dev` means the injection did
+not happen** and you are not looking at what you think you are. That is the
+whole point of the fallback: before this, prod reported `0.1.0-dev` while
+serving the `v0.1.0` release, and nothing on the outside could tell a release
+from a hand-rolled deploy.
+
 ## Is it actually up?
 
 ```bash

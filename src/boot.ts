@@ -18,10 +18,26 @@ export interface BootOptions {
   port: number;
 }
 
+// What /health reports as `version` is the build's identity, not a semver
+// aspiration: the release tag on prod, the commit on staging, and the
+// package.json value locally. Falling back to a value that ends in `-dev` is
+// deliberate — seeing `-dev` on a deployed URL means the injection did not
+// happen, which is exactly what you want to notice.
+export function resolveVersion(
+  env: Record<string, string | undefined>,
+  packageVersion: string,
+): string {
+  const injected = env.APP_VERSION?.trim();
+  return injected ? injected : packageVersion;
+}
+
 export async function startServer(options: BootOptions): Promise<string> {
-  const { version } = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+  const { version: packageVersion } = JSON.parse(
+    readFileSync(packageJsonPath, 'utf8'),
+  ) as {
     version: string;
   };
+  const version = resolveVersion(process.env, packageVersion);
   const pool = createPool();
   await waitForDatabase(pool);
   // Migrations run at boot, so a deploy is also a migration. Concurrent
