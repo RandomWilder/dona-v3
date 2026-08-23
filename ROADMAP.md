@@ -52,18 +52,18 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 
 ---
 
-## Week 1 — Walking skeleton in production
+## Week 1 — Walking skeleton in production ✔
 
-**Goal: `git push` → live URL. Foundation + pipeline before any feature.**
+**Goal: `git push` → live URL. Foundation + pipeline before any feature.** — met 2026-08-23. Slice record: `tasks/week-1.md`.
 
-- [ ] New repo scaffold: kernel first — error shape, ids, clock, migration runner, idempotency store, audit log, event outbox, durable work runner (port patterns from dona-v2 `src/kernel/`). **Done when:** kernel contract tests green.
-- [ ] Local dev: docker compose Postgres 16 + pgvector; `npm run dev` serves health page. **Done when:** clean clone → running in <5 min.
-- [ ] CI: typecheck + tests + lint on every PR; red blocks merge. **Done when:** a deliberately broken PR can't merge.
+- [x] New repo scaffold: kernel first — error shape, ids, clock, migration runner, idempotency store, audit log, event outbox, durable work runner (port patterns from dona-v2 `src/kernel/`). **Done when:** kernel contract tests green. — slices 1.2 + 2.2 + 3.1; 32 kernel tests incl. restart and two-runner race. Five deliberate divergences from v2 recorded in `SPEC-kernel.md` §Decisions
+- [x] Local dev: docker compose Postgres 16 + pgvector; `npm run dev` serves health page. **Done when:** clean clone → running in <5 min. — slice 2.1; measured at 6 seconds from a fresh GitHub clone
+- [x] CI: typecheck + tests + lint on every PR; red blocks merge. **Done when:** a deliberately broken PR can't merge. — slice 3.2; [PR #2](https://github.com/RandomWilder/dona-v3/pull/2) closed unmerged with `mergeStateStatus: BLOCKED`. `REQUIRE_POSTGRES=1` stops CI reporting green having skipped the durability suite
 - [x] CD: merge→staging, tag→prod on Cloud Run; migrations apply on deploy; documented one-command rollback (`./infra/rollback.sh prod`, traffic to the previous revision). **Done when:** you've deployed and rolled back once, on purpose. — slices 4.1 + 4.2; round-trip evidence in `tasks/evidence/4.2-prod-rollback.md`
-- [ ] Port `tokens.css` + page shells (admin chrome, widget shell); staff login stub behind sessions. **Done when:** styled Hebrew RTL "shell" pages live on staging.
-- [ ] `SPEC.md` + empty `SPEC-<module>.md` files committed (contracts sketched, one page each).
+- [x] Port `tokens.css` + page shells (admin chrome, widget shell); staff login stub behind sessions. **Done when:** styled Hebrew RTL "shell" pages live on staging. — slices 5.1 + 5.2; live on staging **and prod**, phone-verified on both. Login is scrypt, not argon2 (reason recorded in week 2 below)
+- [x] `SPEC.md` + empty `SPEC-<module>.md` files committed (contracts sketched, one page each). — slice 1.2; `kernel`, `staff` and `channel` have since gained real content, which is the signal their build started
 
-**Checkpoint demo:** phone opens the prod URL, sees the styled shell. CI/CD proven both directions.
+**Checkpoint demo:** phone opens the prod URL, sees the styled shell. CI/CD proven both directions. — **done 2026-08-23.** `v0.1.0` live on prod behind a login, phone-verified; rollback rehearsed on the real release (11s back, 8s forward) with the surface visibly disappearing and returning. Record: `tasks/evidence/5.2-login-live.md`
 **Cut line:** nothing. This week is the foundation; don't trim it.
 
 ## Week 2 — Identity, portfolio, staff auth & roles
