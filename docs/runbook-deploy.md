@@ -99,6 +99,36 @@ service itself is created by the first deploy, not by this script.
 Why prod has its own Cloud SQL instance rather than a second database on
 staging's: `docs/decisions/ADR-0001-prod-database-isolation.md`.
 
+## The staff login (slice 5.2)
+
+Bootstrap creates two secrets per environment — `<env>-staff-seed-email` and
+`<env>-staff-seed-password`. The password is generated and handed straight to
+Secret Manager: it is never echoed, never written to a file, never committed.
+Every boot mounts both, and creates the operator **only if that email has no
+account yet**.
+
+Read the generated password once:
+
+```bash
+gcloud secrets versions access latest --secret=staging-staff-seed-password --project dona-v3
+```
+
+Prefer your own? Add a version **before the first deploy of that environment**:
+
+```bash
+printf '%s' 'a-password-of-at-least-12-characters' | gcloud secrets versions add staging-staff-seed-password --data-file=- --project dona-v3
+```
+
+**The trap:** seeding creates, it never updates. Once the operator exists, a new
+password version changes nothing — the account keeps the password it was made
+with. Rotation and a change-password flow are week 6. Until then, changing a
+live operator's password means deleting the row and letting the next boot
+re-seed, which is a deliberate act and not something a deploy will do for you.
+
+If the password is too short, or only one of the two secrets is set, **boot
+fails** and the revision never serves. That is on purpose: a deploy with no way
+in, or with a weak way in, should be loud.
+
 ## Not yet in place
 
 Alerting beyond the billing budget, point-in-time recovery, private IP / VPC

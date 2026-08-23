@@ -29,10 +29,13 @@ function loadEnvFile(path: string): void {
 loadEnvFile('.env');
 loadEnvFile('.env.example');
 
-await startServer({
+const started = await startServer({
   host: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3000),
 });
+// Includes whether an operator was seeded — otherwise a developer cannot tell
+// a working local login from a missing one until the form refuses them.
+console.log(started);
 console.log(
   `dona-v3: http://127.0.0.1:${Number(process.env.PORT ?? 3000)}/health`,
 );

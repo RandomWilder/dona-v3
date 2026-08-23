@@ -72,7 +72,7 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 
 - [ ] Modules `identity` / `portfolio` / `occupancy`: schemas, commands, contract tests. **Done when:** phone → person → unit → current occupancy resolves.
 - [ ] CSV importer for the tenant mapping table (idempotent, re-runnable, reports rejects). **Done when:** real pilot slice imported; 5 spot-checks pass.
-- [ ] Staff auth: email+password (argon2), server sessions, roles **admin / operator / viewer**; permission checks server-side per command; every staff action writes an audit record. **Done when:** viewer can't mutate — proven by test, not by hidden buttons.
+- [ ] Staff auth: email+password (**scrypt** — chosen in slice 5.2: `node:crypto` has it built in, so the container needs no native build toolchain; argon2id revisited in week 6 hardening), server sessions, roles **admin / operator / viewer**; permission checks server-side per command; every staff action writes an audit record. **Done when:** viewer can't mutate — proven by test, not by hidden buttons.
 - [ ] Admin shell: nav (queue · conversations · approvals · reports · properties · people · guidance) + people/properties list & create views. **Done when:** the pilot building is browsable on staging.
 
 **Checkpoint demo:** log in as viewer vs admin — different powers; audit trail shows both sessions.

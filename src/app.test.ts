@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { buildApp } from './app.ts';
+import { migratedPoolOrNull, skipReason } from './kernel/pg-support.ts';
 
 const databaseUrl =
   process.env.DATABASE_URL ?? 'postgres://dona:dona@127.0.0.1:5434/dona';
@@ -105,49 +106,36 @@ describe('error shape at the edge', () => {
 });
 
 describe('presentation shells', () => {
-  it('serves the ops shell at /admin, Hebrew and RTL', async () => {
-    const { app, pool } = appWithoutDatabase();
+  it('gates /admin behind a session and serves the tenant shell openly', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    const app = buildApp({ pool, version: '9.9.9-test' });
     try {
-      const response = await app.inject({ method: 'GET', url: '/admin' });
-      assert.equal(response.statusCode, 200);
-      assert.match(response.headers['content-type'] as string, /text\/html/);
-      assert.match(response.body, /<html lang="he" dir="rtl">/);
-      assert.match(response.body, /href="\/ui\/tokens\.css"/);
-      // All seven destinations from ROADMAP week 2 are present from day one.
-      for (const dest of [
-        'queue',
-        'conversations',
-        'approvals',
-        'reports',
-        'properties',
-        'people',
-        'guidance',
-      ]) {
-        assert.match(response.body, new RegExp(`data-dest="${dest}"`), dest);
-      }
+      const admin = await app.inject({ method: 'GET', url: '/admin' });
+      assert.equal(admin.statusCode, 302);
+      assert.equal(admin.headers.location, '/admin/login');
+
+      const tenant = await app.inject({ method: 'GET', url: '/t/anything' });
+      assert.equal(tenant.statusCode, 200);
+      assert.match(tenant.body, /<html lang="he" dir="rtl">/);
+      assert.match(tenant.body, /<textarea[^>]*disabled/);
+      assert.match(tenant.body, /<button[^>]*disabled/);
     } finally {
       await app.close();
       await pool.end();
     }
   });
 
-  it('serves the tenant shell for any link, with the composer disabled', async () => {
-    const { app, pool } = appWithoutDatabase();
-    try {
-      const response = await app.inject({ method: 'GET', url: '/t/anything' });
-      assert.equal(response.statusCode, 200);
-      assert.match(response.headers['content-type'] as string, /text\/html/);
-      assert.match(response.body, /<html lang="he" dir="rtl">/);
-      assert.match(response.body, /<textarea[^>]*disabled/);
-      assert.match(response.body, /<button[^>]*disabled/);
-    } finally {
-      await app.close();
-      await pool.end();
+  it('never echoes the link parameter into the page', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
     }
-  });
-
-  it('never echoes the link parameter into the page', async () => {
-    const { app, pool } = appWithoutDatabase();
+    const app = buildApp({ pool, version: '9.9.9-test' });
     try {
       const injected = '<script>alert(1)</script>';
       const response = await app.inject({
@@ -156,6 +144,23 @@ describe('presentation shells', () => {
       });
       assert.equal(response.statusCode, 200);
       assert.doesNotMatch(response.body, /alert\(1\)/);
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
+  it('sends the bare URL to where the system starts', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    const app = buildApp({ pool, version: '9.9.9-test' });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/' });
+      assert.equal(response.statusCode, 302);
+      assert.equal(response.headers.location, '/admin');
     } finally {
       await app.close();
       await pool.end();

@@ -31,6 +31,8 @@ SQL_INSTANCE="dona-$ENV"
 DB_NAME=dona
 DB_USER=dona
 SECRET="$ENV-database-url"
+SEED_EMAIL_SECRET="$ENV-staff-seed-email"
+SEED_PASSWORD_SECRET="$ENV-staff-seed-password"
 RUNTIME_SA="app-$ENV"
 DEPLOY_SA="deploy-$ENV"
 POOL=github-pool
@@ -119,6 +121,32 @@ else
   unset DB_PASSWORD
 fi
 
+say "Staff seed secrets"
+# The first operator. Created here so the two environments cannot drift, and
+# generated rather than chosen: like the database password, it is handed
+# straight to Secret Manager and never echoed, never written to a file.
+#
+# To read it once:   gcloud secrets versions access latest --secret=$SEED_PASSWORD_SECRET
+# To set your own:   printf '%s' 'your-password' | gcloud secrets versions add $SEED_PASSWORD_SECRET --data-file=-
+# Do that BEFORE the first deploy: seeding creates an operator and never
+# changes an existing one, so after that a new secret version has no effect
+# until a password-rotation flow exists (week 6).
+if gcloud secrets describe "$SEED_EMAIL_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+  echo "  $SEED_EMAIL_SECRET exists"
+else
+  printf 'ops@donadom.co.il' |
+    gcloud secrets create "$SEED_EMAIL_SECRET" \
+      --data-file=- --replication-policy=automatic --project "$PROJECT"
+fi
+
+if gcloud secrets describe "$SEED_PASSWORD_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+  echo "  $SEED_PASSWORD_SECRET exists"
+else
+  openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24 |
+    gcloud secrets create "$SEED_PASSWORD_SECRET" \
+      --data-file=- --replication-policy=automatic --project "$PROJECT"
+fi
+
 say "Service accounts"
 for sa in "$RUNTIME_SA" "$DEPLOY_SA"; do
   gcloud iam service-accounts describe "$sa@$PROJECT.iam.gserviceaccount.com" \
@@ -132,9 +160,11 @@ done
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:$RUNTIME_EMAIL" \
   --role roles/cloudsql.client --condition=None >/dev/null
-gcloud secrets add-iam-policy-binding "$SECRET" \
-  --member "serviceAccount:$RUNTIME_EMAIL" \
-  --role roles/secretmanager.secretAccessor --project "$PROJECT" >/dev/null
+for secret in "$SECRET" "$SEED_EMAIL_SECRET" "$SEED_PASSWORD_SECRET"; do
+  gcloud secrets add-iam-policy-binding "$secret" \
+    --member "serviceAccount:$RUNTIME_EMAIL" \
+    --role roles/secretmanager.secretAccessor --project "$PROJECT" >/dev/null
+done
 
 # Deploy: push images, roll revisions, act as the runtime account. These are
 # project-level today, so deploy-staging and deploy-prod differ in audit trail
