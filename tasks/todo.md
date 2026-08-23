@@ -80,13 +80,16 @@ Everything with a lead time you don't control, fired before writing code. Live s
 
 > Findings worth keeping: me-west1 defaults new Cloud SQL instances to `ENTERPRISE_PLUS`, which rejects shared-core tiers — `--edition=ENTERPRISE` is required for db-f1-micro. Deploy triggers on *CI succeeding*, not on push, so a red commit cannot reach staging even though `enforce_admins` is off.
 
-### Slice 4.2 — Prod + rollback rehearsed ☐
-- [ ] Cloud Run `prod` service (min instances 1) + `app_prod` DB; deploy on git tag
-- [ ] Rollback = one documented command (previous revision); **rehearse it once on purpose**
-- [ ] Smoke step in the deploy job: `/health` must pass or the deploy fails loudly
+### Slice 4.2 — Prod + rollback rehearsed ✔
+- [x] Cloud Run `dona-prod` (min instances 1 / max 5) + its **own** Cloud SQL instance `dona-prod` (backups 02:00 UTC, 7 retained) — not a second database on staging's, per `docs/decisions/ADR-0001-prod-database-isolation.md`; ROADMAP's architecture table amended. Deploy on `v*` tag via `release.yml`, which re-runs the full CI gate on the tagged commit (tags don't match ci.yml's push filter, so `workflow_call` is what makes a tag mean anything) and refuses tags that aren't ancestors of `main`
+- [x] Rollback = `./infra/rollback.sh <staging|prod>` — previous ready revision, traffic moved, smoke run against it. **Rehearsed on staging first, then on prod: 10 seconds.** Documented in `docs/runbook-deploy.md`
+- [x] `infra/smoke.sh` — one definition of "up" for both workflows and for humans; requires `db:up` as well as `ok:true`, and proven to exit non-zero on a bad target, so a deploy fails loudly rather than passing quietly
+- [x] Carried out of 4.1's baseline: `infra/staging-bootstrap.sh` → `infra/bootstrap.sh <staging|prod>`, so two environments cannot drift. Re-run against live staging before prod: clean no-op
 
-**Done when:** you have deployed AND rolled back prod today, both on purpose.
-**Verify:** Cloud Run revision history shows the round-trip. · Size: S
+**Done when:** you have deployed AND rolled back prod today, both on purpose. ✔
+**Verify:** Cloud Run revision history shows the round-trip. · **Verified 2026-08-23: `dona-prod-00001-c8s` (tag [v0.0.1-rc.1](https://github.com/RandomWilder/dona-v3/actions/runs/32627131362)) → `00002-dwz` (tag [v0.0.1-rc.2](https://github.com/RandomWilder/dona-v3/actions/runs/32627283545)) → **rolled back to `00001-c8s` in 10s** → rolled forward to `00002-dwz`. https://dona-prod-ydabrrmura-zf.a.run.app/health returns `{"ok":true,"version":"0.1.0-dev","db":"up"}`; prod logs clean, migrations applied on the fresh instance. Full record: `tasks/evidence/4.2-prod-rollback.md`** · Size: S
+
+> Findings worth keeping: a rollback **pins** traffic — the next `gcloud run deploy` then creates a revision serving 0%, a green pipeline that changes nothing. Both workflows now end with `--to-latest`. Caught by rehearsing the rollback on staging before prod, which is the only reason `deploy.yml` got the fix too; proven by leaving staging deliberately pinned and watching the merge un-pin it. Also: a tag is invisible to a branch-filtered CI workflow, so a release pipeline can look gated and not be.
 
 ## Day 5 (Fri) — Shells, auth stub, checkpoint
 
@@ -114,4 +117,6 @@ Everything with a lead time you don't control, fired before writing code. Live s
 - External fuses (1.1) get a one-line status check every morning.
 
 ## Cut / carried this week
-_(empty — add items here as reality hits)_
+- **`npm audit` is not in the CI gate** (noticed during 4.2 against the shipping checklist — a dependency audit belongs before a production launch). Not smuggled into 4.2; wants its own slice, and week 6's hardening is its natural home.
+- **Per-service IAM scoping.** `deploy-staging` and `deploy-prod` hold `roles/run.admin` at *project* level, so today they differ in audit trail rather than in power. Scoping to each service can only be bound after the service exists — both now do. Week 6.
+- **Prod has no alerting** beyond the smoke test and the billing budget; no PITR, no private IP/VPC connector. All week 6, all named in `docs/runbook-deploy.md` under "Not yet in place".

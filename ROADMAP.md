@@ -59,7 +59,7 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 - [ ] New repo scaffold: kernel first — error shape, ids, clock, migration runner, idempotency store, audit log, event outbox, durable work runner (port patterns from dona-v2 `src/kernel/`). **Done when:** kernel contract tests green.
 - [ ] Local dev: docker compose Postgres 16 + pgvector; `npm run dev` serves health page. **Done when:** clean clone → running in <5 min.
 - [ ] CI: typecheck + tests + lint on every PR; red blocks merge. **Done when:** a deliberately broken PR can't merge.
-- [ ] CD: merge→staging, tag→prod on Cloud Run; migrations apply on deploy; documented one-command rollback (`./infra/rollback.sh prod`, traffic to the previous revision). **Done when:** you've deployed and rolled back once, on purpose.
+- [x] CD: merge→staging, tag→prod on Cloud Run; migrations apply on deploy; documented one-command rollback (`./infra/rollback.sh prod`, traffic to the previous revision). **Done when:** you've deployed and rolled back once, on purpose. — slices 4.1 + 4.2; round-trip evidence in `tasks/evidence/4.2-prod-rollback.md`
 - [ ] Port `tokens.css` + page shells (admin chrome, widget shell); staff login stub behind sessions. **Done when:** styled Hebrew RTL "shell" pages live on staging.
 - [ ] `SPEC.md` + empty `SPEC-<module>.md` files committed (contracts sketched, one page each).
 
