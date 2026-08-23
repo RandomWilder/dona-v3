@@ -4,6 +4,10 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Callable so a release can re-run this exact gate on the tagged commit.
+  # Tags do not match the push filter above, so without this a tag would
+  # deploy to prod having proven nothing (PIPELINE.md §3).
+  workflow_call:
 
 permissions:
   contents: read

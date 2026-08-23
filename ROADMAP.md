@@ -34,7 +34,7 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 |---|---|
 | Runtime | Node 24 + TypeScript (type stripping), `node --test`, Biome |
 | HTTP | Fastify, handlers kept thin (routing/validation only — swap stays cheap) |
-| DB | Cloud SQL Postgres 16 + pgvector — one instance, `app_staging` + `app_prod` databases; migrations run on deploy |
+| DB | Cloud SQL Postgres 16 + pgvector — **one instance per environment** (`dona-staging`, `dona-prod`), database `dona` on each; migrations run on deploy. Amended in slice 4.2: `docs/decisions/ADR-0001-prod-database-isolation.md` |
 | AI | OpenAI: tool-calling chat model + `text-embedding-3-large`; model ids live in config (policy-as-data), never inline |
 | Files | GCS bucket (lease PDFs, photos, evidence) |
 | Deploy | GitHub Actions → Artifact Registry → Cloud Run (`staging` on merge to main, `prod` on tag). Secret Manager for keys. Min instances: 0 staging / 1 prod |
@@ -59,7 +59,7 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 - [ ] New repo scaffold: kernel first — error shape, ids, clock, migration runner, idempotency store, audit log, event outbox, durable work runner (port patterns from dona-v2 `src/kernel/`). **Done when:** kernel contract tests green.
 - [ ] Local dev: docker compose Postgres 16 + pgvector; `npm run dev` serves health page. **Done when:** clean clone → running in <5 min.
 - [ ] CI: typecheck + tests + lint on every PR; red blocks merge. **Done when:** a deliberately broken PR can't merge.
-- [ ] CD: merge→staging, tag→prod on Cloud Run; migrations apply on deploy; documented one-command rollback (re-deploy previous revision). **Done when:** you've deployed and rolled back once, on purpose.
+- [ ] CD: merge→staging, tag→prod on Cloud Run; migrations apply on deploy; documented one-command rollback (`./infra/rollback.sh prod`, traffic to the previous revision). **Done when:** you've deployed and rolled back once, on purpose.
 - [ ] Port `tokens.css` + page shells (admin chrome, widget shell); staff login stub behind sessions. **Done when:** styled Hebrew RTL "shell" pages live on staging.
 - [ ] `SPEC.md` + empty `SPEC-<module>.md` files committed (contracts sketched, one page each).
 

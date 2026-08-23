@@ -1,0 +1,104 @@
+name: Release
+
+# Prod deploys on a version tag, and only on a version tag. The tag is the
+# deliberate act; nothing reaches production by merging.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  # Tags do not trigger the CI workflow's own push filter, so the gate is
+  # re-run here against the tagged commit: typecheck, lint, tests against
+  # Postgres, golden set. Never release red.
+  gate:
+    uses: ./.github/workflows/ci.yml
+
+  prod:
+    name: prod
+    runs-on: ubuntu-latest
+    needs: gate
+    environment: production
+
+    env:
+      PROJECT: dona-v3
+      REGION: me-west1
+      SERVICE: dona-prod
+      IMAGE: me-west1-docker.pkg.dev/dona-v3/dona/app
+      SHA: ${{ github.sha }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A tag can be cut from any branch. Production ships main.
+      - name: Tag must be on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$SHA" FETCH_HEAD; then
+            echo "::error::$TAG ($SHA) is not an ancestor of origin/main — refusing to release"
+            exit 1
+          fi
+          echo "$TAG is on main"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/149055978002/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: deploy-prod@dona-v3.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE:$SHA" -t "$IMAGE:$TAG" -t "$IMAGE:prod" .
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:prod"
+
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:$SHA" \
+            --region "$REGION" \
+            --service-account "app-prod@$PROJECT.iam.gserviceaccount.com" \
+            --add-cloudsql-instances "$PROJECT:$REGION:dona-prod" \
+            --set-secrets "DATABASE_URL=prod-database-url:latest" \
+            --allow-unauthenticated \
+            --min-instances 1 \
+            --max-instances 5 \
+            --quiet
+
+      # A rollback pins traffic to an older revision. Without this, the next
+      # release would create a revision serving 0% — a deploy that looks green
+      # and changes nothing. See docs/runbook-deploy.md.
+      - name: Take traffic
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --to-latest --region "$REGION" --quiet
+
+      # "Deployed but silently broken" must fail loudly (PIPELINE.md §5).
+      - name: Smoke test
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+          BODY="$(./infra/smoke.sh "$URL")"
+          REVISION="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.latestReadyRevisionName)')"
+          {
+            echo "### Prod released: $TAG"
+            echo ""
+            echo "- URL: $URL"
+            echo "- commit: \`$SHA\`"
+            echo "- revision: \`$REVISION\`"
+            echo "- health: \`$BODY\`"
+            echo ""
+            echo "Rollback: \`./infra/rollback.sh prod\`"
+          } >> "$GITHUB_STEP_SUMMARY"
