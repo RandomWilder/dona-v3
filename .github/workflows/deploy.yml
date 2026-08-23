@@ -65,12 +65,11 @@ jobs:
             --quiet
 
       # "Deployed but silently broken" must fail loudly (PIPELINE.md §5).
+      # Same script prod uses, and the same one you can run by hand.
       - name: Smoke test
         run: |
           URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
-          BODY="$(curl -fsS --retry 5 --retry-all-errors --retry-delay 3 "$URL/health")"
-          echo "$BODY"
-          echo "$BODY" | grep -q '"ok":true'
+          BODY="$(./infra/smoke.sh "$URL")"
           {
             echo "### Staging deployed"
             echo ""
