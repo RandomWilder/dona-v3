@@ -23,13 +23,15 @@ proving itself on a real second deploy rather than in a test.
 
 ## Day 6 (Mon) — The two independent modules
 
-### Slice 6.1 — `identity`: people, phones, roles ☐
-- [ ] Migration + `SPEC-identity.md` written **before** the code: person, phone (E.164, normalised), person-kind (tenant / vendor / staff — a person can be more than one)
-- [ ] Commands through `contract.ts` only: `addPerson`, `addPhone`, `findByPhone`. Idempotent on business intent, audited, validated at the edge
-- [ ] Phone normalisation is its own tested unit: Israeli numbers arrive as `050-…`, `+9725…`, `9725…` and must resolve to one person
+### Slice 6.1 — `identity`: people, phones, roles ☑
+- [x] Migration + `SPEC-identity.md` written **before** the code: person, phone (E.164, normalised), person-kind (tenant / vendor / staff — a person can be more than one). `0004_identity.sql`; `identity_phones.phone` is the **primary key**, so one number belongs to one person by schema rather than by care
+- [x] Commands through `contract.ts` only: `addPerson`, `addPhone`, `findByPhone`. Idempotent on business intent, audited, validated at the edge. Two kinds of idempotency, deliberately: `addPerson` takes an `intentKey` through the kernel's `once()` (a person has no natural key — two tenants can share a name), `addPhone` is idempotent on the unique index itself. Validation runs *inside* `audit.around`, so a rejected command leaves an `error` row instead of no row
+- [x] Phone normalisation is its own tested unit: Israeli numbers arrive as `050-…`, `+9725…`, `9725…` and must resolve to one person. `internal/phone.ts` — pure, 33 cases, Israeli by default and international only when the caller writes `+`
 
 **Done when:** a phone number in any of the three formats resolves to the same person; a second `addPerson` with the same intent key returns the first result.
-**Verify:** `npm test src/identity/*.test.ts` · Size: M
+**Verify:** `npm test src/identity/*.test.ts src/identity/internal/*.test.ts` — *the glob was widened*: as written it missed `internal/phone.test.ts`, which is the unit this slice explicitly requires · Size: M
+
+**Verified 2026-08-23:** 42 identity tests pass (33 normalisation + 9 contract). Both halves of *Done when* are named tests: four spellings of one number resolve to one person id, and a repeated `intentKey` returns the first result with exactly one row in `identity_people`. Full CI gate run locally as CI runs it — `npm run typecheck` · `npm run lint` · `REQUIRE_POSTGRES=1 npm test` → **118 pass, 0 skipped** · `npm run evals` → 3/3. Migration proved against the real database rather than inferred: `0004_identity.sql` in `schema_migrations`, `identity_phones_pkey` on `phone`, and no `DEFAULT now()` on any `created_at` — a test asserts the stored time is the injected clock's.
 
 ### Slice 6.2 — `portfolio`: buildings, units, assets ☐
 - [ ] `SPEC-portfolio.md`, then migration: building, unit, asset (boiler, lift, intercom…), access notes
