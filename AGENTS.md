@@ -6,6 +6,7 @@
 - Dev: `npm run db:up && npm run dev` (http://127.0.0.1:3000/health)
 - Clean clone → running: `npm ci && npm run db:up && npm run dev` (Docker required; env defaults come from `.env.example`, no `.env` needed locally)
 - Node 24 type stripping runs `.ts` directly — no build step.
+- Deploy: merge to `main` → CI green → staging auto-deploys (me-west1). Infra: `infra/staging-bootstrap.sh` (idempotent). Never provision by hand.
 
 ## Architecture
 - Modular monolith, one deployable. Modules under `src/<module>/`: identity, portfolio, occupancy, catalog, vendor-roster, case, job, dispatch, fulfillment, channel, staff. Shared kernel: `src/kernel/`.

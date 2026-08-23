@@ -69,13 +69,15 @@ Everything with a lead time you don't control, fired before writing code. Live s
 
 ## Day 4 (Thu) — Deploy pipeline, both directions
 
-### Slice 4.1 — Staging on Cloud Run ☐
-- [ ] Dockerfile; Artifact Registry; Cloud Run `staging` service; Cloud SQL (`app_staging`) connected; Secret Manager wired
-- [ ] GitHub Actions deploy on merge-to-main via Workload Identity Federation (no long-lived keys)
-- [ ] Migrations apply on deploy; `/health` green on the staging URL
+### Slice 4.1 — Staging on Cloud Run ✔
+- [x] Dockerfile (`node:24-slim`, no build step); Artifact Registry `dona`; Cloud Run `dona-staging`; Cloud SQL `dona-staging` (POSTGRES_16, db-f1-micro, **me-west1** so tenant data stays in Israel); connection URL in Secret Manager, mounted as `DATABASE_URL`
+- [x] Deploy on merge-to-main via Workload Identity Federation — no long-lived keys. Provider pins `assertion.repository` to this repo; runtime and deploy service accounts are separate and least-privilege
+- [x] Migrations apply on deploy (`boot.ts` awaits `migrate()` before `listen()`, so a bad migration fails the deploy instead of serving); `/health` green on the staging URL
 
-**Done when:** merge to main → staging updates itself, end to end, no manual step.
-**Verify:** merge a trivial change, watch it land. · Size: M
+**Done when:** merge to main → staging updates itself, end to end, no manual step. ✔
+**Verify:** merge a trivial change, watch it land. · **Verified 2026-08-22: push `03f1130` → [CI green](https://github.com/RandomWilder/dona-v3/actions/runs/32595090848) → [Deploy green](https://github.com/RandomWilder/dona-v3/actions/runs/32595116241) → https://dona-staging-ydabrrmura-zf.a.run.app/health returns `{"ok":true,"version":"0.1.0-dev","db":"up"}` in 0.44s, revision `dona-staging-00001-vkx` on image tag `03f1130…`. No manual step. Cloud Run logs clean; pgvector accepted by Cloud SQL.** · Size: M
+
+> Findings worth keeping: me-west1 defaults new Cloud SQL instances to `ENTERPRISE_PLUS`, which rejects shared-core tiers — `--edition=ENTERPRISE` is required for db-f1-micro. Deploy triggers on *CI succeeding*, not on push, so a red commit cannot reach staging even though `enforce_admins` is off.
 
 ### Slice 4.2 — Prod + rollback rehearsed ☐
 - [ ] Cloud Run `prod` service (min instances 1) + `app_prod` DB; deploy on git tag
