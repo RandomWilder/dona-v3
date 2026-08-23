@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>דונה דום — שיחה לדייר</title>
+    <link rel="stylesheet" href="/ui/tokens.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+      }
+      .page {
+        min-height: 100dvh;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: var(--color-bg);
+      }
+      .page-bar {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        min-height: var(--size-touch);
+        padding-inline: var(--space-4);
+        padding-block: var(--space-2);
+        background: var(--color-chrome);
+        color: var(--color-on-chrome);
+      }
+      .page-bar-title {
+        margin: 0;
+        font-size: var(--text-body);
+        font-weight: 500;
+      }
+      .page-bar-note {
+        margin: 0;
+        color: var(--color-on-chrome-muted);
+        font-size: var(--text-sm);
+      }
+      .chat-frame {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--color-bg);
+      }
+      .chat-head {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+        padding: var(--space-4);
+        border-block-end: var(--size-hairline) solid var(--color-divider);
+      }
+      .chat-head h1 {
+        margin: 0;
+        font-size: var(--text-lg);
+        font-weight: 500;
+      }
+      .thread {
+        flex: 1;
+        overflow: auto;
+        padding: var(--space-4);
+        display: grid;
+        gap: var(--space-4);
+        align-content: start;
+      }
+      .msg {
+        max-width: 88%;
+        display: grid;
+        gap: var(--space-1);
+      }
+      .msg-dona {
+        justify-self: start;
+      }
+      .msg .who {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .msg .body {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: var(--text-body);
+      }
+      .composer {
+        border-block-start: var(--size-hairline) solid var(--color-divider);
+        padding: var(--space-3);
+        background: var(--color-bg);
+      }
+      .composer-row {
+        display: flex;
+        gap: var(--space-2);
+        align-items: end;
+      }
+      .composer-row textarea {
+        flex: 1;
+        min-height: var(--size-touch);
+      }
+      .composer-row .btn {
+        flex: 0 0 auto;
+        min-width: var(--size-touch);
+      }
+      .composer-note {
+        margin: var(--space-2) 0 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      @media (min-width: 760px) {
+        /* The chrome bar stays full-bleed; only the frame is inset, so the
+           page reads as one surface rather than a floating box in a box. */
+        .chat-frame {
+          width: min(calc(100% - var(--space-8)), var(--size-shell-max));
+          margin-inline: auto;
+          margin-block: var(--space-4);
+          border-radius: var(--radius-4);
+          box-shadow: var(--shadow-panel);
+          background: var(--color-surface-card);
+          overflow: hidden;
+        }
+        .composer {
+          background: var(--color-surface-card);
+        }
+        .composer-row textarea,
+        .composer-row .btn {
+          min-height: var(--size-touch-compact);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="page-bar">
+        <div>
+          <p class="page-bar-title">דונה דום</p>
+          <p class="page-bar-note">שיחה עם דונה. נכנסים מקישור אישי שנשלח אליכם.</p>
+        </div>
+      </header>
+
+      <main class="chat-frame">
+        <div class="chat-head">
+          <h1>דונה</h1>
+          <span class="chip">בבנייה</span>
+        </div>
+
+        <div class="thread">
+          <article class="msg msg-dona">
+            <p class="who">דונה</p>
+            <p class="body">שלום. כאן תתנהל השיחה שלכם עם דונה דום — שאלות על החוזה, תקלות בדירה, בקשות למסמכים. כרגע זהו שלד העיצוב בלבד: השיחה עצמה עוד לא פעילה.</p>
+          </article>
+        </div>
+
+        <form class="composer">
+          <div class="composer-row">
+            <textarea id="composer-text" rows="1" aria-label="כתיבת הודעה" placeholder="כתיבת הודעה" disabled></textarea>
+            <button type="submit" class="btn btn-primary" disabled>שליחה</button>
+          </div>
+          <p class="composer-note">השיחה נפתחת בשלב הבא של הבנייה. עד אז אפשר לפנות למשרד כרגיל.</p>
+        </form>
+      </main>
+    </div>
+  </body>
+</html>
