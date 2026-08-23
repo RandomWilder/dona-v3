@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { registerChannelUi } from './channel/contract.ts';
+import type { Clock } from './kernel/clock.ts';
 import { httpStatus, KernelError, toErrorBody } from './kernel/errors.ts';
 import { registerUiAssets } from './kernel/ui/assets.ts';
 import { registerStaffUi } from './staff/contract.ts';
@@ -8,10 +9,26 @@ import { registerStaffUi } from './staff/contract.ts';
 export interface AppDeps {
   pool: Pool;
   version: string;
+  clock?: Clock;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
+
+  // The login form posts as a browser form. Fastify parses JSON out of the box
+  // and nothing else; this is the whole of what @fastify/formbody would have
+  // added, so it is not worth a runtime dependency.
+  app.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (_request, body, done) => {
+      try {
+        done(null, Object.fromEntries(new URLSearchParams(body as string)));
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
 
   app.get('/health', async (_request, reply) => {
     try {
@@ -42,8 +59,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Presentation: the shared token layer, then one shell per module edge.
   // Modules are reached through their contract, never through their internals.
   registerUiAssets(app);
-  registerStaffUi(app);
+  registerStaffUi(app, { pool: deps.pool, clock: deps.clock });
   registerChannelUi(app);
+
+  // The bare URL is what someone types on a phone; send it where the system
+  // actually starts rather than at a 404.
+  app.get('/', async (_request, reply) => reply.redirect('/admin', 302));
 
   return app;
 }

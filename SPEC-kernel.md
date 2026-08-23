@@ -17,6 +17,10 @@ Conventions inherited from SPEC.md. The kernel holds no business logic — it is
 
 Known gap, to close with the first route that takes a body: Fastify's schema-validation failures are client errors and must map to `invalid` (400), not `unavailable` (503). Every route today is a GET with no body, so nothing can reach that path yet.
 
+### Module-owned tables (slice 5.2)
+
+Migration `0003_staff_auth.sql` is the first schema the kernel runs on another module's behalf. The runner is kernel machinery; the tables are not. A module's tables are described in that module's spec — `SPEC-staff.md` for `staff_operators`, `staff_sessions` and `staff_login_attempts` — and the kernel never reads them.
+
 ## Idempotency (`idempotency.ts`)
 
 `once<T>(key, work)` — the key is the caller's business intent (job id, offer id), never a random value.

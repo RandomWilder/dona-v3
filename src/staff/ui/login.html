@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>דונה דום — כניסה לדלפק</title>
+    <link rel="stylesheet" href="/ui/tokens.css" />
+    <style>
+      .login {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: var(--space-5);
+      }
+      .login-card {
+        width: min(100%, 24rem);
+        display: grid;
+        gap: var(--space-4);
+        background: var(--color-surface-card);
+        border: var(--size-hairline) solid var(--color-divider-soft);
+        border-radius: var(--radius-3);
+        padding: var(--space-6);
+      }
+      .login-card h1 {
+        margin: 0;
+        font-size: var(--text-xl);
+        font-weight: 500;
+      }
+      .login-card label {
+        display: grid;
+        gap: var(--space-1);
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      .login-error {
+        margin: 0;
+        color: var(--color-alert);
+        font-size: var(--text-body);
+      }
+      .login-error[hidden] {
+        display: none;
+      }
+      .login-note {
+        margin: 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="login">
+      <form class="login-card" method="post" action="/admin/login">
+        <h1>כניסה לדלפק</h1>
+        <p class="login-error" id="login-error" hidden>הפרטים אינם נכונים.</p>
+        <label>
+          אימייל
+          <input name="email" type="email" required autocomplete="username" dir="ltr" />
+        </label>
+        <label>
+          סיסמה
+          <input name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit" class="btn btn-primary">כניסה</button>
+        <p class="login-note">הדלפק מיועד לצוות דונה דום בלבד.</p>
+      </form>
+    </main>
+  </body>
+</html>

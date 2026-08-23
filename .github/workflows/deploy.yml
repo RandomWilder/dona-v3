@@ -58,7 +58,7 @@ jobs:
             --region "$REGION" \
             --service-account "app-staging@$PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$PROJECT:$REGION:dona-staging" \
-            --set-secrets "DATABASE_URL=staging-database-url:latest" \
+            --set-secrets "DATABASE_URL=staging-database-url:latest,STAFF_SEED_EMAIL=staging-staff-seed-email:latest,STAFF_SEED_PASSWORD=staging-staff-seed-password:latest" \
             --allow-unauthenticated \
             --min-instances 0 \
             --max-instances 3 \

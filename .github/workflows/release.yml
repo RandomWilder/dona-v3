@@ -72,7 +72,7 @@ jobs:
             --region "$REGION" \
             --service-account "app-prod@$PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$PROJECT:$REGION:dona-prod" \
-            --set-secrets "DATABASE_URL=prod-database-url:latest" \
+            --set-secrets "DATABASE_URL=prod-database-url:latest,STAFF_SEED_EMAIL=prod-staff-seed-email:latest,STAFF_SEED_PASSWORD=prod-staff-seed-password:latest" \
             --allow-unauthenticated \
             --min-instances 1 \
             --max-instances 5 \

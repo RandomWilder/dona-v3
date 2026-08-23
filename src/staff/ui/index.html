@@ -55,12 +55,19 @@
       }
       .ops-footer {
         margin-block-start: auto;
-        padding: var(--space-4) var(--space-5);
+        padding-block: var(--space-4);
+        display: grid;
+        gap: var(--space-2);
       }
       .ops-footer-note {
         margin: 0;
+        padding-inline: var(--space-5);
         color: var(--color-on-chrome-muted);
         font-size: var(--text-sm);
+      }
+      .ops-footer form {
+        margin: 0;
+        display: grid;
       }
       .ops-top {
         display: none;
@@ -95,7 +102,7 @@
         }
         .nav-label,
         .ops-brand,
-        .ops-footer {
+        .ops-footer-note {
           position: absolute;
           width: var(--size-hairline);
           height: var(--size-hairline);
@@ -209,6 +216,14 @@
           </button>
         </nav>
         <div class="ops-footer">
+          <form method="post" action="/admin/logout">
+            <button type="submit" class="nav-item" title="יציאה">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+              </svg>
+              <span class="nav-label">יציאה</span>
+            </button>
+          </form>
           <p class="ops-footer-note">שלד בלבד. היעדים נפתחים לפי סדר בניית המערכת.</p>
         </div>
       </aside>
