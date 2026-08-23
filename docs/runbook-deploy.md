@@ -6,6 +6,7 @@ stays in Israel). Neither is ever deployed by hand.
 | | staging | prod |
 |---|---|---|
 | service | `dona-staging` | `dona-prod` |
+| URL | https://dona-staging-ydabrrmura-zf.a.run.app | https://dona-prod-ydabrrmura-zf.a.run.app |
 | trigger | merge to `main`, after CI passes | push a `v*` tag |
 | workflow | `.github/workflows/deploy.yml` | `.github/workflows/release.yml` |
 | instances | min 0 / max 3 | min 1 / max 5 |
@@ -71,7 +72,7 @@ you own this step yourself.
 ## Is it actually up?
 
 ```bash
-./infra/smoke.sh https://dona-prod-xxxx.me-west1.run.app
+./infra/smoke.sh https://dona-prod-ydabrrmura-zf.a.run.app
 ```
 
 Requires `"ok":true` **and** `"db":"up"` — a process that boots but cannot
