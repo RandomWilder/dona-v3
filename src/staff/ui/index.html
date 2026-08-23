@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>דונה דום — דלפק תפעול</title>
+    <link rel="stylesheet" href="/ui/tokens.css" />
+    <style>
+      .ops {
+        min-height: 100dvh;
+        display: grid;
+        grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
+      }
+      .ops-nav {
+        background: var(--color-chrome);
+        color: var(--color-on-chrome);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        padding-block: var(--space-4);
+        border-inline-end: var(--size-hairline) solid var(--color-on-chrome-raised);
+      }
+      .ops-brand {
+        padding-inline: var(--space-5);
+        padding-block: var(--space-2);
+        font-weight: 500;
+      }
+      .ops-nav nav {
+        display: grid;
+        gap: var(--space-1);
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        min-height: var(--size-control-ops);
+        margin-inline: var(--space-3);
+        padding-inline: var(--space-3);
+        border: 0;
+        border-radius: var(--radius-2);
+        background: transparent;
+        color: var(--color-on-chrome);
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+      .nav-item[aria-current="page"] {
+        background: var(--color-on-chrome-raised);
+      }
+      .nav-item svg {
+        flex: 0 0 auto;
+        width: var(--space-5);
+        height: var(--space-5);
+      }
+      .ops-footer {
+        margin-block-start: auto;
+        padding: var(--space-4) var(--space-5);
+      }
+      .ops-footer-note {
+        margin: 0;
+        color: var(--color-on-chrome-muted);
+        font-size: var(--text-sm);
+      }
+      .ops-top {
+        display: none;
+      }
+      .ops-main {
+        min-width: 0;
+        padding: var(--space-6);
+        max-width: var(--size-content-max);
+      }
+      .panel[hidden] {
+        display: none;
+      }
+      .panel h1 {
+        margin: 0 0 var(--space-5);
+        font-size: var(--text-xl);
+        font-weight: 500;
+      }
+      .card {
+        background: var(--color-surface-card);
+        border: var(--size-hairline) solid var(--color-divider-soft);
+        border-radius: var(--radius-3);
+        padding: var(--space-5);
+      }
+      .shell-note {
+        margin: var(--space-5) 0 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      @media (max-width: 1099px) and (min-width: 840px) {
+        .ops {
+          grid-template-columns: var(--size-icon-rail) minmax(0, 1fr);
+        }
+        .nav-label,
+        .ops-brand,
+        .ops-footer {
+          position: absolute;
+          width: var(--size-hairline);
+          height: var(--size-hairline);
+          overflow: hidden;
+          clip-path: inset(50%);
+        }
+        .nav-item {
+          justify-content: center;
+          padding-inline: 0;
+        }
+      }
+      @media (max-width: 839px) {
+        .ops {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto 1fr;
+        }
+        .ops-top {
+          display: flex;
+          align-items: center;
+          gap: var(--space-3);
+          min-height: var(--size-touch);
+          padding-inline: var(--space-3);
+          background: var(--color-chrome);
+          color: var(--color-on-chrome);
+        }
+        .ops-top button {
+          width: var(--size-touch);
+          height: var(--size-touch);
+          border: 0;
+          background: transparent;
+          color: var(--color-on-chrome);
+          cursor: pointer;
+        }
+        .ops-nav {
+          display: none;
+          position: absolute;
+          inset-block-start: var(--size-touch);
+          inset-inline: 0;
+          z-index: 2;
+        }
+        .ops.is-nav-open .ops-nav {
+          display: flex;
+        }
+        .ops-main {
+          padding: var(--space-4);
+        }
+      }
+      @media (max-width: 479px) {
+        .nav-item {
+          min-height: var(--size-touch);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ops" id="ops">
+      <div class="ops-top">
+        <button type="button" id="nav-toggle" aria-label="תפריט" aria-expanded="false" aria-controls="ops-nav">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <span>דונה דום</span>
+      </div>
+
+      <aside class="ops-nav" id="ops-nav">
+        <p class="ops-brand">דונה דום</p>
+        <nav aria-label="יעדי דלפק">
+          <button type="button" class="nav-item" data-dest="queue" title="תור" aria-current="page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">תור</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="conversations" title="שיחות">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 9h8" /><path d="M8 13h5" />
+              <path d="M3 20V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7z" />
+            </svg>
+            <span class="nav-label">שיחות</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="approvals" title="אישורים">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m9 12 2 2 4-4" /><circle cx="12" cy="12" r="9" />
+            </svg>
+            <span class="nav-label">אישורים</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="reports" title="דוחות">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 21h18" /><path d="M7 21V10" /><path d="M12 21V4" /><path d="M17 21v-7" />
+            </svg>
+            <span class="nav-label">דוחות</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="properties" title="נכסים">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18" /><path d="M6 12h12" /><path d="M6 16h12" /><path d="M10 6h.01" /><path d="M14 6h.01" />
+            </svg>
+            <span class="nav-label">נכסים</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="people" title="אנשים">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span class="nav-label">אנשים</span>
+          </button>
+          <button type="button" class="nav-item" data-dest="guidance" title="הנחיות">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            <span class="nav-label">הנחיות</span>
+          </button>
+        </nav>
+        <div class="ops-footer">
+          <p class="ops-footer-note">שלד בלבד. היעדים נפתחים לפי סדר בניית המערכת.</p>
+        </div>
+      </aside>
+
+      <main class="ops-main">
+        <section class="panel" data-panel="queue">
+          <h1>תור</h1>
+          <div class="card"><p class="empty-state">התור עוד לא נפתח. פניות דיירים ייכנסו לכאן עם מודול הפניות, בשבוע 5.</p></div>
+          <p class="shell-note">היעד קיים כדי שהניווט לא ישתנה כשהתוכן ייכנס.</p>
+        </section>
+        <section class="panel" data-panel="conversations" hidden>
+          <h1>שיחות</h1>
+          <div class="card"><p class="empty-state">תמלילי שיחות עם דונה, עם המקורות שצוטטו בכל תשובה, מגיעים בשבוע 4.</p></div>
+        </section>
+        <section class="panel" data-panel="approvals" hidden>
+          <h1>אישורים</h1>
+          <div class="card"><p class="empty-state">אישור טיוטות של דונה לפני שליחה — שבוע 7.</p></div>
+        </section>
+        <section class="panel" data-panel="reports" hidden>
+          <h1>דוחות</h1>
+          <div class="card"><p class="empty-state">דוחות תפעול — שבוע 7.</p></div>
+        </section>
+        <section class="panel" data-panel="properties" hidden>
+          <h1>נכסים</h1>
+          <div class="card"><p class="empty-state">בניינים, דירות ונכסים נטענים בשבוע 2.</p></div>
+        </section>
+        <section class="panel" data-panel="people" hidden>
+          <h1>אנשים</h1>
+          <div class="card"><p class="empty-state">דיירים, ספקים וצוות — שבוע 2.</p></div>
+        </section>
+        <section class="panel" data-panel="guidance" hidden>
+          <h1>הנחיות</h1>
+          <div class="card"><p class="empty-state">סוגי עבודות, כללי השתתפות עצמית ומדריכי עשה-זאת-בעצמך — שבוע 5.</p></div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const ops = document.getElementById('ops');
+      const navToggle = document.getElementById('nav-toggle');
+      const items = document.querySelectorAll('.nav-item');
+      const panels = document.querySelectorAll('.panel');
+
+      for (const item of items) {
+        item.addEventListener('click', () => {
+          for (const other of items) other.removeAttribute('aria-current');
+          item.setAttribute('aria-current', 'page');
+          for (const panel of panels) {
+            panel.hidden = panel.dataset.panel !== item.dataset.dest;
+          }
+          ops.classList.remove('is-nav-open');
+          navToggle.setAttribute('aria-expanded', 'false');
+        });
+      }
+
+      navToggle.addEventListener('click', () => {
+        const open = ops.classList.toggle('is-nav-open');
+        navToggle.setAttribute('aria-expanded', String(open));
+      });
+    </script>
+  </body>
+</html>
