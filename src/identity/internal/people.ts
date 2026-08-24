@@ -11,6 +11,7 @@ import {
   type IdempotencyStore,
 } from '../../kernel/idempotency.ts';
 import { newId } from '../../kernel/ids.ts';
+import { asText, requireText, validId } from '../../kernel/validate.ts';
 import { normalizePhone } from './phone.ts';
 
 export const personKinds = ['tenant', 'vendor', 'staff'] as const;
@@ -20,7 +21,6 @@ export const languages = ['he', 'en'] as const;
 export type Language = (typeof languages)[number];
 
 const maxNameLength = 200;
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Who is asking. Every mutation records one, so the audit trail can answer
 // "which agent created this person" without a second system.
@@ -154,7 +154,7 @@ export function createIdentity(deps: IdentityDeps): Identity {
           },
         },
         async () => {
-          const personId = validId(input?.personId);
+          const personId = validId(input?.personId, 'personId');
           const phone = normalizePhone(input?.phone);
 
           const person = await pool.query(
@@ -240,26 +240,8 @@ async function inTransaction(
   }
 }
 
-// Edge validation. Everything a caller can get wrong becomes `invalid` here,
-// rather than a Postgres cast error surfacing as `unavailable` later.
-function requireText(value: unknown, field: string, max: number): string {
-  if (typeof value !== 'string') {
-    throw new KernelError('invalid', `${field} is required`);
-  }
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > max) {
-    throw new KernelError('invalid', `${field} must be 1 to ${max} characters`);
-  }
-  return trimmed;
-}
-
-function validId(value: unknown): string {
-  if (typeof value !== 'string' || !uuid.test(value)) {
-    throw new KernelError('invalid', 'personId is not an id');
-  }
-  return value;
-}
-
+// Shape validation lives in the kernel (`kernel/validate.ts`). What stays here
+// is the part that knows identity's vocabulary.
 function validKinds(value: unknown): PersonKind[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new KernelError('invalid', 'at least one kind is required');
@@ -281,10 +263,4 @@ function validLanguage(value: unknown): Language {
     throw new KernelError('invalid', 'unknown language', { language: value });
   }
   return value as Language;
-}
-
-// Audit inputs must survive a caller passing nonsense, since the audit entry is
-// built before validation runs.
-function asText(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
 }

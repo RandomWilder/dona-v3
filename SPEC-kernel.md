@@ -11,6 +11,24 @@ Conventions inherited from SPEC.md. The kernel holds no business logic — it is
 - **Ids** — `newId(clock)` returns RFC 9562 UUIDv7: a 48-bit millisecond timestamp then random bits, so ids sort by creation time and stay index-friendly as Postgres primary keys.
 - **Clock** — `Clock.now()`. Business logic never calls `Date.now()` or `new Date()`; it receives a clock. `fixedClock(start)` is the test double and advances on demand. Time reaches SQL as a bound parameter, never as `NOW()`.
 
+### Edge validation (`validate.ts`, slice 7.1)
+
+`requireText(value, field, max)` · `optionalText(value, field, max)` ·
+`validId(value, field)` · `asText(value)`.
+
+Everything a caller can get wrong becomes `KernelError('invalid', ...)` here, rather than a
+Postgres cast error surfacing as `unavailable` three layers down. `requireText` trims first
+and measures after, so a padded 200-character name is 200 characters and `'   '` is empty.
+`asText` never throws: audit entries are built *before* validation runs, so the entry has to
+survive a caller passing a number where a string belongs.
+
+Extracted at the rule of three — `identity` and `portfolio` each carried a private copy, and
+`occupancy` would have been the third. They live in the kernel because they are the *shape*
+of a value and nothing more. A validator that knows a domain vocabulary stays in its module:
+`portfolio`'s `validKind` and `optionalFloor`, `identity`'s `validKinds` and `validLanguage`,
+`occupancy`'s `validRole`. The line is whether the kernel would have to learn a business
+word to hold it — the kernel holds no business logic.
+
 ### At the HTTP edge (slice 5.1)
 
 `buildApp` installs `setNotFoundHandler` and `setErrorHandler`, so Fastify's own bodies never reach the wire: its 404 echoes the requested path back, and its 500 carries the thrown message. Both now render as `{ code, message }` — an unknown route is `not_found`, and anything unrecognised becomes `unavailable` / "unexpected error" via `toErrorBody`. This mattered the moment the app grew a second route.
