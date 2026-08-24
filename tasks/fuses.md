@@ -23,6 +23,7 @@
 - Fired: 2026-08-22 ✅
 - Status: **sent and acknowledged** — Dona Dom confirmed a set of all relevant documents will be sent, organized **by apartment**, phone numbers included.
 - Who owes what: Dona Dom owes the document set; on receipt, Asaf + Claude map which document is needed at which stage of residency (feeds the week-2 importer and week-3 ingestion design).
+- **2026-08-24:** still not received, two days on. Slice 8.1's importer was built anyway, against a seeded fixture, per `ROADMAP.md:175`'s contingency — so the table now has somewhere to land the day it arrives. What is still owed is unchanged, and 8.1 cannot be closed without it: five spot-checks against the source document are its third acceptance bar. **Next check: 2026-08-25.** If it slips further, the mapping table alone (not the lease PDFs) is the piece that unblocks day 8 — worth asking for it separately rather than waiting for the whole set.
 - Requested: lease PDFs · tenant↔unit↔phone table · vendor list · deductible rules · fault Q&A doc
 
 ## 4. GCP + OpenAI + domain

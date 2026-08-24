@@ -89,12 +89,24 @@ proving itself on a real second deploy rather than in a test.
 ## Day 8 (Wed) — Real data in
 
 ### Slice 8.1 — CSV importer for the tenant mapping table ☐
-- [ ] Idempotent and re-runnable: importing the same file twice changes nothing the second time
-- [ ] Reports rejects rather than failing the run — a bad row names itself, the good rows land
-- [ ] Dry-run mode, because the first run against real data should be readable before it is committed
+- [x] Idempotent and re-runnable — and **not by the importer's own bookkeeping**: every command underneath is already idempotent on a natural key, so the importer keeps no ledger and writes no table of its own. Proved against the real database: a second `--commit` of the same file left all five row counts identical. The person's intent key is the **normalised phone, not the source row** — a row number moves when the file is re-sorted, which would mint a second person for someone who already exists. `SPEC-identity.md` said "source row" and was amended rather than quietly diverged from
+- [x] Reports rejects rather than failing the run — `{ line, code, reason }`, the line counted through quoted newlines so it points at what the operator sees in their spreadsheet. A test lands a good row sitting between two bad ones. Only a **structural** failure aborts (ragged row, unterminated quote, missing column), because after one the line numbers are meaningless and a reject list with wrong lines is worse than none
+- [x] Dry-run mode, and it is the **default** — `--commit` is required to write. Stated honestly in `SPEC-import.md`: it *validates* rather than *simulates*. It applies every field rule through the same module functions the commands use, but does not execute the writes, so it cannot surface a failure that only exists in the database's current state. That set is nearly empty here (keying a person by phone makes `identity`'s one conflict unreachable), and simulating properly needs the module commands to take a transaction rather than a pool — four modules, its own slice
 
 **Done when:** the real pilot slice imports; re-running is a no-op; 5 spot-checks against the source document pass.
 **Verify:** import the real file into staging, then 5 manual `resolveByPhone` lookups. · Size: M
+
+**Built 2026-08-24 — slice stays open, two bars of three met.** The importer, its format and its fixture exist and are tested; the third bar needs a file that has not arrived. Built ahead of the data on `ROADMAP.md:175`'s own contingency ("weeks 2–3 run on a realistic seeded building; importer makes swap-in a one-hour job"), and on Asaf's call to start 8.1 rather than let the fuse idle the day.
+
+- **Re-running is a no-op** ✔ — proved on the real database, not inferred: five row counts identical across two `--commit` runs.
+- **A realistic slice imports** ✔ — but the *seeded* building, not the pilot one. `src/import/fixtures/pilot-sample.csv`: one household of three parties, a second of two, five rows each wrong in a different way. 6 applied, 5 rejected, every reject naming its line.
+- **5 spot-checks against the source document** ☐ — **needs the real file.** Cannot be faked, and a synthetic pass here would be exactly the "trusting the demo" anti-pattern PIPELINE.md §9 names.
+
+Also here: `normalizePhone` promoted onto `identity`'s contract and `validDate` / `optionalDate` onto `occupancy`'s — both to the caller their specs predicted, so the importer enforces the same rule the commands do instead of carrying a second copy that drifts.
+
+**Verified so far 2026-08-24:** 24 import tests (15 CSV parser + 9 contract). Full CI gate run locally as CI runs it — `npm run typecheck` · `npm run lint` · `REQUIRE_POSTGRES=1 npm test` → **214 pass, 0 skipped** · `npm run evals` → 3/3. 190 → 214. Record: `tasks/evidence/day-8-importer.md`
+
+**To close this slice** when the table arrives: `npm run import -- <file> ` (dry), read the rejects, then `--commit` against staging, then 5 `resolveByPhone` spot-checks against the source document.
 
 > **Depends on Dona Dom.** Lease PDFs and the tenant↔unit↔phone table were requested and acknowledged 2026-08-22 (`tasks/fuses.md`). If the data has not arrived by Wednesday this slice slips and Day 9 moves up — the importer can be built against a synthetic file, but it cannot be *verified* against one.
 

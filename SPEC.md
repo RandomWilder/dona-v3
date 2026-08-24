@@ -33,6 +33,7 @@ An operations system of record for Dona Dom's residential rentals, with an AI ag
 | fulfillment | Visit, evidence, tenant sign-off, close; no-show handling. | dispatch |
 | channel | The agent (widget, later WhatsApp) + tenant verification. Tools only; owns tone. | all above |
 | staff | Admin panel edge: auth, roles, queue, conversations, approvals, settings. Not a domain module. | all above |
+| import | CSV load of the tenant mapping table. A tool, not a domain module: no tables, no invariants. | identity, portfolio, occupancy |
 
 No cycles. Contracts live in the provider module's spec.
 
