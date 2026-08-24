@@ -8,6 +8,10 @@ export type ActorKind = 'tenant' | 'staff' | 'agent' | 'system';
 export interface AuditEntry {
   actorKind: ActorKind;
   actorId?: string;
+  // What permitted the action, when the actor holds one — staff roles today.
+  // Unconstrained here on purpose: the kernel does not know any module's role
+  // vocabulary, and a tenant or agent has none.
+  actorRole?: string;
   action: string;
   subjectId?: string;
   inputs: Record<string, unknown>;
@@ -29,14 +33,15 @@ export function createAuditLog(
   async function write(entry: AuditEntry, result: AuditOutcome): Promise<void> {
     await pool.query(
       `INSERT INTO audit_log
-         (id, at, actor_kind, actor_id, action, subject_id, inputs,
+         (id, at, actor_kind, actor_id, actor_role, action, subject_id, inputs,
           outcome, error_code, error_message)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)`,
       [
         newId(clock),
         clock.now(),
         entry.actorKind,
         entry.actorId ?? null,
+        entry.actorRole ?? null,
         entry.action,
         entry.subjectId ?? null,
         JSON.stringify(entry.inputs),

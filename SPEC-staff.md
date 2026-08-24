@@ -34,7 +34,8 @@ before any real content lands behind it.
 ## Authentication (slice 5.2)
 
 One seeded operator, a server session, and a gate in front of `/admin`. **Roles are not
-here** — admin/operator/viewer and "viewer can't mutate, proven by test" are ROADMAP week 2.
+here** — admin/operator/viewer and "viewer can't mutate, proven by test" arrived in slice
+9.1, below.
 Staff credentials live in this module permanently: `identity` owns people, phones and roles
 for tenants and vendors, while staff auth is the admin-panel edge, which is what SPEC.md
 already says this module is.
@@ -104,3 +105,82 @@ email is deliberate there (SPEC-kernel.md) — but it must never reach stdout.
 CSP headers · per-IP rate limits · password rotation and change flow · lockout notification ·
 login CSRF (`SameSite=Lax` covers cookie-bearing cross-site POSTs, which is logout; a forced-
 login CSRF remains possible and is accepted for a single-operator ops board). All week 6.
+
+## Roles (slice 9.1)
+
+Three roles on the operator, checked server-side on every command. A hidden button is
+not a permission check, so nothing in this module gates on the UI: the guard runs before
+the domain module is reached, and the test that proves it calls the command directly.
+
+### The matrix
+
+| capability | admin | operator | viewer |
+|---|---|---|---|
+| `read` — see the board and everything on it | ✔ | ✔ | ✔ |
+| `mutate` — create or change people, places, tenancies | ✔ | ✔ | — |
+| `administer` — operators, roles, policy rows | ✔ | — | — |
+
+`administer` has no commands behind it yet; it is named now so that the first one to
+arrive has an answer waiting rather than inventing a fourth role.
+
+**This matrix is code, not a config row — a stated exception to SPEC.md rule 4.** Rule 4
+governs tunables: rates, timeouts, deductibles, kill switches. An access-control matrix
+that a runtime row could widen is a privilege-escalation path with a database write as
+its exploit; changing who may mutate must cost a deploy and leave a diff.
+
+`internal/roles.ts` holds it, pure and tested alone — the shape `occupancy` uses for
+`tenancyAccess`: decided once, never re-decided at a call site. `validRole` lives here
+too and not in the kernel, for the reason slice 7.1 drew that line: the kernel holds the
+*shape* of a value, never a domain word.
+
+### On the record, and in the session
+
+`staff_operators.role` is `NOT NULL` with a `CHECK` on the three values and **no
+`DEFAULT`** — every insert names a role rather than inheriting a lucky one. The role
+travels on the session that `readSession` already returns, so a request costs no extra
+query to know what its holder may do.
+
+Migration `0008` backfills every existing operator to `admin`. That is what makes the
+account already seeded on staging and prod an admin: the seeder creates but never
+updates, so a migration is the only thing that can reach a row that already exists.
+
+### Seeding
+
+`seedStaffOperator` creates an `admin`, fixed rather than env-driven. It is the only
+account at boot; a `STAFF_SEED_ROLE` that could be set to `viewer` is a way to deploy a
+system with no way to administer it.
+
+### The guarded surface (`internal/commands.ts`)
+
+`staff` owns no domain tables, and until this slice it owned no commands either — which
+left "a viewer cannot mutate" with nothing to call. It now fronts the mutating commands
+of `identity`, `portfolio` and `occupancy` — `addPerson`, `addPhone`, `addBuilding`,
+`addUnit`, `addAsset`, `openTenancy`, `addParty`, `endTenancy` — each taking `(input,
+session)`. The three modules are injected as their contract types, so the dependency is
+visible in the constructor rather than buried in a call.
+
+Each command, in this order:
+
+1. `requireCapability(role, 'mutate')` — **before** the module is reached, so a refusal
+   never touches domain state;
+2. inside `audit.around`, so a refusal leaves an `error` row with code `not_allowed`
+   rather than no row at all — the pattern `identity` established for rejected commands;
+3. then the module command, with `actor: { kind: 'staff', id: operator.id }`.
+
+**A successful staff mutation writes two audit rows, deliberately.** The edge row
+(`staff.addBuilding`) records the decision and the role that permitted it; the module row
+(`portfolio.addBuilding`) records the change. Read later as duplication, they would
+invite a "cleanup" that deletes the only record of *who was allowed*.
+
+### Audited with the role
+
+Every entry this module writes carries `actorRole` — the kernel's `audit_log.actor_role`,
+nullable because tenant, agent and system actors have no role. Login and logout carry it
+too, which is what lets the week-2 demo show two sessions apart in the trail.
+
+### Not here
+
+No route calls the guarded surface yet: slice 10.1 builds the people and properties
+views on top of it. No second operator can be created either — the seeder creates but
+never updates, and there is no operator-management screen, so the viewer account for the
+week-2 demo has to be made by hand.

@@ -48,6 +48,9 @@ describe('staff seed', () => {
       // The seeded account is usable, which is the whole point.
       const session = await auth.login(email, password);
       assert.equal(session.operator.email, email);
+      // And it is an admin: it is the only account at boot, so anything less
+      // would deploy a system nobody can administer.
+      assert.equal(session.operator.role, 'admin');
     } finally {
       await pool.end();
     }

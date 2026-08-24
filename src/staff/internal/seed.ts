@@ -36,7 +36,10 @@ export async function seedStaffOperator(
     return { seeded: false, reason: 'already exists' };
   }
   try {
-    await auth.createOperator({ email, password });
+    // An admin, fixed rather than env-driven: this is the only account at boot,
+    // and a STAFF_SEED_ROLE that could say `viewer` is a way to deploy a system
+    // with no way to administer it.
+    await auth.createOperator({ email, password, role: 'admin' });
   } catch (error) {
     // Two instances booting at once both pass the check above; the loser of the
     // insert has still got what it wanted.

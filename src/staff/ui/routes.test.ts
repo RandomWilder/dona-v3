@@ -31,7 +31,11 @@ describe('staff login', () => {
     const app = buildApp({ pool, version: '9.9.9-test' });
     const email = `ops-${newId()}@dona.test`;
     try {
-      await createStaffAuth(pool).createOperator({ email, password });
+      await createStaffAuth(pool).createOperator({
+        email,
+        password,
+        role: 'admin',
+      });
 
       // Locked out to begin with.
       const closed = await app.inject({ method: 'GET', url: '/admin' });
@@ -110,7 +114,11 @@ describe('staff login', () => {
     const app = buildApp({ pool, version: '9.9.9-test' });
     const email = `ops-${newId()}@dona.test`;
     try {
-      await createStaffAuth(pool).createOperator({ email, password });
+      await createStaffAuth(pool).createOperator({
+        email,
+        password,
+        role: 'admin',
+      });
       const request = form(email, password);
       const response = await app.inject({
         ...request,

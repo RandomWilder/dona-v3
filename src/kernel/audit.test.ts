@@ -9,6 +9,7 @@ import { migratedPoolOrNull, skipReason } from './pg-support.ts';
 interface Row {
   actor_kind: string;
   actor_id: string | null;
+  actor_role: string | null;
   action: string;
   subject_id: string | null;
   inputs: Record<string, unknown>;
@@ -22,8 +23,8 @@ async function rowFor(
   subjectId: string,
 ): Promise<Row | undefined> {
   const result = await pool?.query<Row>(
-    `SELECT actor_kind, actor_id, action, subject_id, inputs, outcome,
-            error_code, at
+    `SELECT actor_kind, actor_id, actor_role, action, subject_id, inputs,
+            outcome, error_code, at
      FROM audit_log WHERE subject_id = $1`,
     [subjectId],
   );
@@ -64,6 +65,48 @@ describe('audit log', () => {
         error_code: null,
       });
       assert.equal(row?.at.toISOString(), '2026-08-22T10:00:00.000Z');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  // Slice 9.1: what permitted the action, which actor_id alone cannot answer.
+  // Nullable because a tenant, an agent and the system hold no role at all.
+  it('records the actor role when there is one, and NULL when there is not', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    try {
+      const audit = createAuditLog(pool, fixedClock(new Date()));
+      const withRole = newId();
+      const without = newId();
+
+      await audit.write(
+        {
+          actorKind: 'staff',
+          actorId: newId(),
+          actorRole: 'viewer',
+          action: 'staff.addBuilding',
+          subjectId: withRole,
+          inputs: {},
+        },
+        { outcome: 'error', code: 'not_allowed' },
+      );
+      await audit.write(
+        {
+          actorKind: 'tenant',
+          actorId: newId(),
+          action: 'case.open',
+          subjectId: without,
+          inputs: {},
+        },
+        { outcome: 'ok' },
+      );
+
+      assert.equal((await rowFor(pool, withRole))?.actor_role, 'viewer');
+      assert.equal((await rowFor(pool, without))?.actor_role, null);
     } finally {
       await pool.end();
     }
