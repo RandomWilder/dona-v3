@@ -50,13 +50,37 @@ proving itself on a real second deploy rather than in a test.
 
 ## Day 7 (Tue) — The join that the whole product rests on
 
+> **Added 2026-08-24, ahead of 7.1.** A real signed lease arrived from Dona Dom. Reviewing it settled where real tenant documents live, and that decision is infrastructure — so it lands through `bootstrap.sh` before any slice needs it, rather than by hand when day 8 does. Findings from the document: `docs/reference/lease-template-donadom.md`.
+
+### Slice 7.0 — private document store ☑
+- [x] `gs://dona-v3-staging-docs` + `gs://dona-v3-prod-docs` provisioned **in `infra/bootstrap.sh`**, idempotently, per the house rule that infrastructure is never provisioned by hand
+- [x] Created closed and re-closed on every run: public access prevention **enforced**, uniform bucket-level access, versioning on, `me-west1` so Israeli tenants' documents stay in Israel
+- [x] Least privilege: `roles/storage.objectViewer` on that one bucket for that environment's runtime account only — never a project-level storage role, so `app-staging` cannot read prod's documents. **No write access**: nothing uploads leases until week 3, and `objectCreator` is granted in the slice that needs it
+- [x] Object paths carry the place, never the people — paths reach logs and audit entries, which is exactly where personal data must not appear
+- [x] The sample lease uploaded to both environments (decision on the record: staging holds real leases, because ROADMAP week 3's demo and day 8's verification are both written against staging)
+
+**Done when:** both buckets exist with all four controls, the app can read only its own, and an unauthenticated request gets nothing.
+**Verify:** `bootstrap.sh` re-run clean on both environments; `gcloud storage buckets describe` reports `ME-WEST1 / True / enforced / True`; unauthenticated `curl` of an object returns **403** and a bucket listing **401**. · Size: S
+
+**Verified 2026-08-24:** `./infra/bootstrap.sh staging` and `prod` both re-ran clean over existing resources. Both buckets report `ME-WEST1  True  enforced  True`. IAM on each grants `objectViewer` to that environment's runtime account and nothing broader. The lease uploaded to both at 1,695,258 bytes, byte-for-byte the source. Unauthenticated `curl` → **403** on the object in both environments, **401** on the bucket listing. Scrubbing of the reference note checked mechanically: no names, ID numbers, phones, emails, bank references or amounts — the only multi-digit number in the file is the year.
+
+
 ### Slice 7.1 — `occupancy`: who lives where, who is billed ☐
 - [ ] `SPEC-occupancy.md` first: current lease, tenant(s), the billed party, start/end. Depends on identity + portfolio, via their contracts only
 - [ ] `resolveByPhone(phone)` — the chain the agent will call on every conversation: phone → person → unit → **current** occupancy
 - [ ] Isolation test: a phone belonging to one tenancy must not resolve to another's unit, and an ended occupancy must not resolve at all
 
-**Done when:** `phone → person → unit → current occupancy` resolves end to end, and the isolation test proves it cannot cross tenancies.
-**Verify:** `npm test src/occupancy/*.test.ts` · Size: M
+**Scope added 2026-08-24**, from the real lease (`docs/reference/lease-template-donadom.md`). Both are cheap now and become migrations against real tenant data once day 8 imports:
+- [ ] **A role on the occupancy↔person link** — `tenant` / `billed` / `guarantor`. The lease has three kinds of party, not two: two tenants jointly and severally, and a guarantor who signs the שטר חוב, has his own phone, and does not live there. He is a party to the tenancy, not an occupant, so the role belongs on the link rather than on the person — `identity` needs no change
+- [ ] **The isolation test covers him too:** a guarantor's phone resolves to the tenancy *with his role*, and must not reach tenant-level lease access. Building the seam once, with every party it will ever carry, is the point of doing this in 7.1 rather than reopening it in week 3
+- [ ] **Parking and storage on the occupancy**, nullable — both are numbered in the lease and the landlord may reassign the parking, temporarily or permanently. Reassignment is a change to the tenancy, not to the building, which is why they do not belong to the unit in `portfolio`
+
+**Also open at the top of this slice:** `requireText` / `validId` / `optionalText` are duplicated in `identity` and `portfolio`, and `occupancy` is the third copy — the point at which extracting them to the kernel stops being premature. Touches kernel surface and `SPEC-kernel.md`, so it is a plan-mode decision, taken deliberately rather than smuggled into the slice.
+
+**Note, not scope:** the lease's term is an initial period plus two options capped at ten years, and rent is an index-linked formula rather than a number. `resolveByPhone` only needs "is this current", so neither changes 7.1 — but the week-3 digital twin must not store a single end date or a single rent figure.
+
+**Done when:** `phone → person → unit → current occupancy` resolves end to end; the isolation test proves it cannot cross tenancies, and that a guarantor does not get a tenant's access.
+**Verify:** `npm test src/occupancy/*.test.ts src/occupancy/internal/*.test.ts` (glob widened as in 6.1 and 6.2) · Size: M→L, given the added scope
 
 > This is the seam SPEC.md's "absolute tenant isolation enforced at the query layer" hangs on. Every read in weeks 3–5 is scoped by what this returns, so it gets isolation tests before it gets features.
 
@@ -109,6 +133,9 @@ proving itself on a real second deploy rather than in a test.
 - **Domain for `app.` / `admin.`** — owed by Dona Dom, not blocking; Cloud Run URLs work. Needed when custom domains are mapped.
 - **`npm audit` is not in the CI gate.** Wants its own slice; week 6's hardening is its natural home.
 - **Per-service IAM scoping.** `deploy-staging` and `deploy-prod` hold `roles/run.admin` at *project* level. Both services now exist, so the binding is finally possible. Week 6.
+- **The default compute service account holds `roles/editor`** on `dona-v3` — a Google default — so it can read the private document buckets regardless of their own IAM. Nothing uses it: Cloud Run runs as `app-<env>` and images build in GitHub Actions. Removing the binding is a project-wide IAM change, deliberately not made inside slice 7.0. Week 6.
+- **The document store has no retention rule and no deletion path.** A signed lease is a legal record whose retention is Dona Dom's to set, not ours to guess — but a real tenant cannot yet exercise a deletion request. Week 6, with the rest of the privacy work. Also absent: CMEK and data-access audit logs.
+- **Staging's blast radius changed.** It now holds real leases — government ID numbers and signature images — so it is no longer the environment that can be broken freely. This raises the price of the two items above and of staging having no alerting.
 - **Prod has no alerting** beyond the smoke test and the billing budget; no PITR, no private IP/VPC connector. Week 6, all named in `docs/runbook-deploy.md`.
 - **Auth items deferred deliberately** (`SPEC-staff.md`): CSP headers, per-IP rate limits, password rotation and change flow, login CSRF. Week 6.
 - **Seeding creates but never updates.** Changing a live operator's password has no path yet; the rotation flow lands with week 6, and until then the runbook documents the manual route.
