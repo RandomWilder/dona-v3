@@ -6,9 +6,10 @@
 #   ./infra/bootstrap.sh prod
 #
 # staging and prod are the same shape, deliberately: separate Cloud SQL
-# instance, separate secret, separate runtime and deploy identities, nothing
-# shared but the image registry and the Workload Identity pool. Why prod does
-# not share staging's instance: docs/decisions/ADR-0001-prod-database-isolation.md
+# instance, separate secret, separate document bucket, separate runtime and
+# deploy identities, nothing shared but the image registry and the Workload
+# Identity pool. Why prod does not share staging's instance:
+# docs/decisions/ADR-0001-prod-database-isolation.md
 #
 # The Cloud Run service itself is created by the first deploy, not here.
 set -euo pipefail
@@ -33,6 +34,7 @@ DB_USER=dona
 SECRET="$ENV-database-url"
 SEED_EMAIL_SECRET="$ENV-staff-seed-email"
 SEED_PASSWORD_SECRET="$ENV-staff-seed-password"
+DOCS_BUCKET="$PROJECT-$ENV-docs"
 RUNTIME_SA="app-$ENV"
 DEPLOY_SA="deploy-$ENV"
 POOL=github-pool
@@ -53,6 +55,7 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   sqladmin.googleapis.com \
   secretmanager.googleapis.com \
+  storage.googleapis.com \
   iam.googleapis.com \
   iamcredentials.googleapis.com \
   sts.googleapis.com \
@@ -176,6 +179,43 @@ for role in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccou
     --role "$role" --condition=None >/dev/null
 done
 
+say "Private document store gs://$DOCS_BUCKET"
+# Real lease PDFs live here: tenant names, government ID numbers, phone
+# numbers, bank details and signature images. That is sensitive personal data,
+# not merely personal, so the bucket is created closed and re-closed on every
+# run. Same region as everything else, which also keeps Israeli tenants' data
+# in Israel.
+gcloud storage buckets describe "gs://$DOCS_BUCKET" --project "$PROJECT" >/dev/null 2>&1 ||
+  gcloud storage buckets create "gs://$DOCS_BUCKET" \
+    --location="$REGION" \
+    --uniform-bucket-level-access \
+    --public-access-prevention \
+    --project "$PROJECT"
+
+# Re-applied every run rather than only at creation: these three are the
+# controls that matter, and a re-run is how a console click gets corrected.
+#   public access prevention — the bucket can never be made public, even by
+#     someone who wants to; it is not a default that can be toggled off per
+#     object.
+#   uniform bucket-level access — no per-object ACLs, so access is decided in
+#     one place that can be read at a glance.
+#   versioning — an overwrite or a delete is recoverable, which matters when
+#     the object is the only copy of a signed contract.
+gcloud storage buckets update "gs://$DOCS_BUCKET" \
+  --uniform-bucket-level-access \
+  --public-access-prevention \
+  --versioning \
+  --project "$PROJECT" >/dev/null
+
+# Read-only, on this bucket alone — never a project-level storage role, so
+# app-staging cannot read prod's documents. The app has no write access because
+# nothing uploads leases yet; objectCreator lands with the week-3 upload slice,
+# when there is something to grant it for.
+gcloud storage buckets add-iam-policy-binding "gs://$DOCS_BUCKET" \
+  --member "serviceAccount:$RUNTIME_EMAIL" \
+  --role roles/storage.objectViewer \
+  --project "$PROJECT" >/dev/null
+
 say "Workload Identity Federation (no long-lived keys)"
 gcloud iam workload-identity-pools describe "$POOL" \
   --location=global --project "$PROJECT" >/dev/null 2>&1 ||
@@ -205,3 +245,4 @@ echo "  deploy SA:    $DEPLOY_EMAIL"
 echo "  runtime SA:   $RUNTIME_EMAIL"
 echo "  sql instance: $CONNECTION_NAME"
 echo "  secret:       $SECRET"
+echo "  docs bucket:  gs://$DOCS_BUCKET"

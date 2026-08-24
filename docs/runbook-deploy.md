@@ -109,8 +109,9 @@ gcloud run services list --region me-west1 --project dona-v3
 
 Idempotent — describe-or-create throughout, and it never touches an existing
 database password. Provisions APIs, Artifact Registry, Cloud SQL, the
-connection secret, both service accounts and the WIF binding. The Cloud Run
-service itself is created by the first deploy, not by this script.
+connection secret, both service accounts, the private document bucket and the
+WIF binding. The Cloud Run service itself is created by the first deploy, not by
+this script.
 
 Why prod has its own Cloud SQL instance rather than a second database on
 staging's: `docs/decisions/ADR-0001-prod-database-isolation.md`.
@@ -144,6 +145,79 @@ re-seed, which is a deliberate act and not something a deploy will do for you.
 If the password is too short, or only one of the two secrets is set, **boot
 fails** and the revision never serves. That is on purpose: a deploy with no way
 in, or with a weak way in, should be loud.
+
+## Private document store (slice 7.0)
+
+Real tenant documents — signed leases and what comes with them — live in a
+per-environment bucket, never in this repo and never on a laptop as the only
+copy:
+
+```
+gs://dona-v3-staging-docs
+gs://dona-v3-prod-docs
+```
+
+Both are provisioned by `bootstrap.sh` and re-closed on every run. Four controls,
+verified after each provision:
+
+| control | why |
+|---|---|
+| **public access prevention: enforced** | the bucket cannot be made public, by anyone, ever — not a default that a later object can opt out of |
+| **uniform bucket-level access** | no per-object ACLs, so access is decided in one place you can read at a glance |
+| **versioning on** | an overwrite or deletion is recoverable; the object may be the only copy of a signed contract |
+| **location `me-west1`** | Israeli tenants' documents stay in Israel |
+
+Read access is `roles/storage.objectViewer` on that one bucket, granted to that
+environment's runtime account only — never a project-level storage role, so
+`app-staging` cannot read prod's documents. **The app cannot write**: nothing
+uploads leases until the week-3 upload slice, and `objectCreator` is granted
+then, when there is something to grant it for.
+
+Check it is still closed:
+
+```bash
+gcloud storage buckets describe gs://dona-v3-prod-docs --project dona-v3 --format="value(location,uniform_bucket_level_access,public_access_prevention,versioning_enabled)"
+```
+
+Expect `ME-WEST1  True  enforced  True`. An unauthenticated `curl` of any object
+must return `403`, and a bucket listing `401`.
+
+### Object paths carry no personal names
+
+```
+leases/<city>/<street-and-number>/bldg-<n>/unit-<n>/lease-<start-date>-signed.pdf
+```
+
+Paths surface in logs, error messages and audit entries, which is exactly where
+personal data must not appear (SPEC.md). The place identifies the document; the
+people in it never do.
+
+Upload with your own credentials — humans upload, the service accounts only read:
+
+```bash
+gcloud storage cp "<local file>" "gs://dona-v3-prod-docs/leases/<path>" --project dona-v3
+```
+
+### Known gap: the default compute service account
+
+`149055978002-compute@developer.gserviceaccount.com` holds `roles/editor` at
+project level — a Google default — and can therefore read these documents
+regardless of the bucket's own policy. Nothing uses it: Cloud Run runs as
+`app-<env>`, and images are built in GitHub Actions. Removing that binding is a
+project-wide IAM change and is a **week-6 hardening item**, recorded in
+`tasks/todo.md`. Nobody holds `roles/viewer`, so the bucket's legacy viewer
+binding grants no one anything today.
+
+### Retention
+
+There is no lifecycle rule. A signed lease is a legal record whose retention is
+Dona Dom's to set, not ours to guess, and deleting one by policy would be worse
+than keeping it. **This is a deliberate gap, not an oversight** — it needs a
+retention period and a working deletion path before real tenants can exercise a
+deletion request. Week 6, alongside the rest of the privacy work.
+
+Encryption is Google-managed at rest; customer-managed keys (CMEK) and
+data-access audit logs are not enabled.
 
 ## Not yet in place
 

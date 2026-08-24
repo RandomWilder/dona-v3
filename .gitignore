@@ -6,3 +6,8 @@ dist/
 *.log
 .DS_Store
 .npm-cache/
+
+# Real tenant documents never live in this repo — they belong in the private
+# document store (docs/runbook-deploy.md). Leases arrive as PDFs, so this is a
+# safety net against a stray `git add -A`, not a policy in itself.
+*.pdf
