@@ -225,5 +225,8 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   honestly rather than guess — guessing wrong inside a household is recoverable, guessing
   wrong across households is the isolation failure. That belongs in slice 8.1, where the real
   file is.
+- **`validDate` / `optionalDate` are on the contract as of slice 8.1.** The importer must
+  reject `2026-02-30` before it writes rather than after, and a second copy of the rule in
+  the importer would drift from the one these commands enforce. Behaviour unchanged.
 - **Nothing is removable.** No way to detach a party or delete a tenancy; corrections are a
   manual database task until an admin screen owns them.

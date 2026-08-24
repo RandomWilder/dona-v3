@@ -103,9 +103,14 @@ Creates a person with at least one kind. Validated at the edge: `intentKey` non-
 
 Idempotent through the kernel's `once(key, work)` on `identity.addPerson:<intentKey>`.
 A person has **no natural business key** — two tenants can share a name, and a person may
-exist before any phone is known — so the caller names the intent. The importer's intent
-key is its source row; the agent's is the case it is acting for. A second call with the
+exist before any phone is known — so the caller names the intent. A second call with the
 same key returns the first result rather than a second person.
+
+**Amended in slice 8.1:** this said the importer's intent key is its source row. A row
+number is not stable — re-sorting the file, or inserting one line near the top, would shift
+every key below it and mint a second person for someone who already exists. The importer
+keys on the **normalised phone** instead, which is the one thing about a row that cannot
+move. The agent's key is still the case it is acting for.
 
 ### `addPhone({ personId, phone }, actor) → { personId, phone }`
 
@@ -150,5 +155,6 @@ Phone numbers and names reach `audit_log` deliberately — it is a table, not a 
   screen owns it (week 2 day 10 lists, week 6 for edits).
 - **No contact preferences** (preferred channel, quiet hours) — those are policy data and
   land with the channel work in week 4.
-- **No `normalizePhone` on the public contract.** It stays internal until a caller outside
-  the module needs it; the day-8 importer is the likely first.
+- ~~**No `normalizePhone` on the public contract.**~~ **Promoted in slice 8.1**, to the
+  caller this section predicted: the importer keys a person by their phone, and re-deriving
+  the rule outside this module would be a second copy that drifts from this one.

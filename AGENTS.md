@@ -9,7 +9,7 @@
 - Deploy: merge to `main` → CI green → staging; push a `v*` tag → CI gate re-run → prod (me-west1). Rollback: `./infra/rollback.sh <staging|prod>`. Infra: `infra/bootstrap.sh <staging|prod>` (idempotent) — never provision by hand. Runbook: `docs/runbook-deploy.md`.
 
 ## Architecture
-- Modular monolith, one deployable. Modules under `src/<module>/`: identity, portfolio, occupancy, catalog, vendor-roster, case, job, dispatch, fulfillment, channel, staff. Shared kernel: `src/kernel/`.
+- Modular monolith, one deployable. Modules under `src/<module>/`: identity, portfolio, occupancy, catalog, vendor-roster, case, job, dispatch, fulfillment, channel, staff. Plus `import` — a tool, not a domain module (`SPEC-import.md`). Shared kernel: `src/kernel/`.
 - A module may import another module's `contract.ts` only — never `src/<module>/internal/`.
 - Read `SPEC.md` first. Before touching a module, read its `SPEC-<module>.md`; update the spec before changing behavior.
 - Policies (rates, timeouts, deductibles, feature flags) are config/data rows — never constants in code.
