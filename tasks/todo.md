@@ -33,12 +33,18 @@ proving itself on a real second deploy rather than in a test.
 
 **Verified 2026-08-23:** 42 identity tests pass (33 normalisation + 9 contract). Both halves of *Done when* are named tests: four spellings of one number resolve to one person id, and a repeated `intentKey` returns the first result with exactly one row in `identity_people`. Full CI gate run locally as CI runs it — `npm run typecheck` · `npm run lint` · `REQUIRE_POSTGRES=1 npm test` → **118 pass, 0 skipped** · `npm run evals` → 3/3. Migration proved against the real database rather than inferred: `0004_identity.sql` in `schema_migrations`, `identity_phones_pkey` on `phone`, and no `DEFAULT now()` on any `created_at` — a test asserts the stored time is the injected clock's.
 
-### Slice 6.2 — `portfolio`: buildings, units, assets ☐
-- [ ] `SPEC-portfolio.md`, then migration: building, unit, asset (boiler, lift, intercom…), access notes
-- [ ] Commands: `addBuilding`, `addUnit`, `addAsset`, `getUnit`. No dependency on identity — portfolio is about places, not people
+### Slice 6.2 — `portfolio`: buildings, units, assets ☑
+- [x] `SPEC-portfolio.md`, then migration: building, unit, asset (boiler, lift, intercom…), access notes. `0005_portfolio.sql`. **Deviation, sanctioned:** an asset names its building always and its unit *optionally* — `unit_id IS NULL` is a building asset, so a lift is the building's rather than whichever flat it was parked under. A composite FK `(unit_id, building_id)` makes pairing a unit with the wrong building impossible
+- [x] Commands: `addBuilding`, `addUnit`, `addAsset`, `getUnit`. No dependency on identity — portfolio is about places, not people. **No intent keys anywhere in this module:** a place has natural identity (a building *is* its address, a unit *is* its label within one), so all three creates are idempotent on unique indexes and the kernel's `once()` is unused here — the contrast with `identity` is recorded in both specs
+- [x] Access notes are opt-in on the read (`getUnit(id, { includeAccessNotes: true })`) — they are entry codes, and a caller must ask rather than remember to strip
+- [x] Key normalisation is its own tested unit (`internal/keys.ts`, 12 cases), deliberately naive: whitespace and case, plus leading zeros on numeric unit labels. It does **not** know `רח׳` is `רחוב` — real addresses arrive day 8, and a wrong guess merges two real buildings
 
 **Done when:** contract tests cover the tree building → unit → asset, and a unit cannot be created under a building that does not exist.
-**Verify:** `npm test src/portfolio/*.test.ts` · Size: M
+**Verify:** `npm test src/portfolio/*.test.ts src/portfolio/internal/*.test.ts` — *glob widened*, as in 6.1: as written it missed `internal/keys.test.ts` · Size: M
+
+**Verified 2026-08-23:** 23 portfolio tests pass (12 key normalisation + 11 contract). Both halves of *Done when* are named tests: the tree is written and read back whole through `getUnit`, and a unit under an unknown building is refused `not_found`. Full CI gate run locally as CI runs it — `npm run typecheck` · `npm run lint` · `REQUIRE_POSTGRES=1 npm test` → **141 pass, 0 skipped** · `npm run evals` → 3/3. Migration proved against the real database: `0005_portfolio.sql` in `schema_migrations`, the composite FK `portfolio_assets_unit_id_building_id_fkey` present, and the unique constraint reported by Postgres as `NULLS NOT DISTINCT` — which is what makes two building assets of one kind collide instead of duplicating.
+
+> **Day 6 closed.** Both modules exist and neither imports the other. 7.1 joins them.
 
 ## Day 7 (Tue) — The join that the whole product rests on
 
