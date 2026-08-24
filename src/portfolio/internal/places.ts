@@ -7,6 +7,12 @@ import {
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
+import {
+  asText,
+  optionalText,
+  requireText,
+  validId,
+} from '../../kernel/validate.ts';
 import { addressKey, unitKey } from './keys.ts';
 
 export const assetKinds = [
@@ -22,7 +28,6 @@ export const assetKinds = [
 ] as const;
 export type AssetKind = (typeof assetKinds)[number];
 
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const maxName = 200;
 const maxLabel = 50;
 const maxNotes = 2000;
@@ -460,35 +465,8 @@ function toUnit(row: UnitRow, withNotes: boolean): Unit {
   return withNotes ? { ...unit, accessNotes: row.access_notes } : unit;
 }
 
-function requireText(value: unknown, field: string, max: number): string {
-  if (typeof value !== 'string') {
-    throw new KernelError('invalid', `${field} is required`);
-  }
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > max) {
-    throw new KernelError('invalid', `${field} must be 1 to ${max} characters`);
-  }
-  return trimmed;
-}
-
-function optionalText(
-  value: unknown,
-  field: string,
-  max: number,
-): string | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-  return requireText(value, field, max);
-}
-
-function validId(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !uuid.test(value)) {
-    throw new KernelError('invalid', `${field} is not an id`);
-  }
-  return value;
-}
-
+// Shape validation lives in the kernel (`kernel/validate.ts`). What stays here
+// is the part that knows portfolio's vocabulary.
 function optionalFloor(value: unknown): number | null {
   if (value === undefined || value === null) {
     return null;
@@ -508,8 +486,4 @@ function validKind(value: unknown): AssetKind {
     throw new KernelError('invalid', 'unknown asset kind', { kind: value });
   }
   return value as AssetKind;
-}
-
-function asText(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
 }
