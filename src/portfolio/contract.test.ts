@@ -268,19 +268,23 @@ describe('portfolio contract', () => {
         outcome: string;
         error_code: string | null;
       }>(
-        `SELECT action, outcome, error_code FROM audit_log
-          WHERE subject_id = $1 ORDER BY at`,
+        'SELECT action, outcome, error_code FROM audit_log WHERE subject_id = $1',
         [building.id],
       );
-      assert.deepEqual(onBuilding.rows, [
-        { action: 'portfolio.addUnit', outcome: 'ok', error_code: null },
-        { action: 'portfolio.addAsset', outcome: 'ok', error_code: null },
-        {
-          action: 'portfolio.addUnit',
-          outcome: 'error',
-          error_code: 'invalid',
-        },
-      ]);
+      // Compared as a set, not a sequence. `at` has millisecond resolution and
+      // these three commands land inside one, so ordering by it is a coin
+      // toss — this asserted a sequence and passed twice on luck. What the
+      // test is actually for is that nothing goes unaudited.
+      assert.deepEqual(
+        onBuilding.rows
+          .map((row) => `${row.action} ${row.outcome} ${row.error_code ?? '-'}`)
+          .sort(),
+        [
+          'portfolio.addAsset ok -',
+          'portfolio.addUnit error invalid',
+          'portfolio.addUnit ok -',
+        ],
+      );
 
       // A building has no subject id — its address is what identifies it.
       const onAddress = await pool.query<{ actor_kind: string }>(
