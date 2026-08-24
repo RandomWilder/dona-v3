@@ -105,6 +105,7 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
         {
           actorKind: 'staff',
           actorId: session.operator.id,
+          actorRole: session.operator.role,
           action: 'staff.login',
           subjectId: session.operator.id,
           // The password is never an input to anything that is recorded.
@@ -146,6 +147,7 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
           {
             actorKind: 'staff',
             actorId: session.operator.id,
+            actorRole: session.operator.role,
             action: 'staff.logout',
             subjectId: session.operator.id,
             inputs: { email: session.operator.email },

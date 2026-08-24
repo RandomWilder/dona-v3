@@ -53,6 +53,8 @@ Migration `0003_staff_auth.sql` is the first schema the kernel runs on another m
 
 `write(entry)` records one row: actor (kind + id), action, subject, inputs, outcome. `around(entry, work)` wraps a command and records `ok` or `error` with the `KernelError` code either way, then re-throws — this is what makes "every command is audited" enforceable rather than aspirational.
 
+`actor_role` (added slice 9.1) records the role an actor held when the entry was written — nullable, because tenant, agent and system actors have none, and unconstrained, because the kernel does not know any module's role vocabulary. It answers "what permitted this", which `actor_id` alone cannot.
+
 `audit_log` is a **table, not a log**. SPEC.md's "PII never in logs" governs log output; command inputs are stored here deliberately, because the audit trail is the system of record for who did what. Field-level redaction is a later concern and belongs in this module when it arrives.
 
 ## Outbox (`events.ts`)

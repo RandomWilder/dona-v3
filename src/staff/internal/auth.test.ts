@@ -52,7 +52,11 @@ describe('staff auth', () => {
       const clock = fixedClock(new Date('2026-08-23T09:00:00Z'));
       const auth = createStaffAuth(pool, { clock });
       const email = uniqueEmail();
-      const operator = await auth.createOperator({ email, password });
+      const operator = await auth.createOperator({
+        email,
+        password,
+        role: 'admin',
+      });
 
       const session = await auth.login(email, password);
       assert.equal(session.operator.id, operator.id);
@@ -71,6 +75,63 @@ describe('staff auth', () => {
     }
   });
 
+  // What the guarded commands read on every call. If it did not survive the
+  // round trip through the session, every permission check would be reading a
+  // default rather than this operator's role.
+  it('carries the role onto the session, on login and on read', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    try {
+      const auth = createStaffAuth(pool);
+      const email = uniqueEmail();
+      const created = await auth.createOperator({
+        email,
+        password,
+        role: 'viewer',
+      });
+      assert.equal(created.role, 'viewer');
+
+      const session = await auth.login(email, password);
+      assert.equal(session.operator.role, 'viewer');
+
+      const read = await auth.readSession(session.token);
+      assert.equal(read?.operator.role, 'viewer');
+
+      assert.equal((await auth.findByEmail(email))?.role, 'viewer');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  // No default anywhere: a caller that does not say what an operator may do is
+  // a bug, and the fail-closed answer is a refusal rather than a viewer.
+  it('refuses an operator whose role is not one of the three', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    try {
+      const auth = createStaffAuth(pool);
+      const invalid = (error: KernelError) => error.code === 'invalid';
+      for (const role of ['superuser', 'Admin', '', undefined]) {
+        const email = uniqueEmail();
+        await assert.rejects(
+          auth.createOperator({ email, password, role: role as 'admin' }),
+          invalid,
+          String(role),
+        );
+        // Refused before the insert, not cleaned up after it.
+        assert.equal(await auth.findByEmail(email), null, String(role));
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
   // The browser holds the only copy. A database read must not yield a usable
   // session token.
   it('never stores the session token itself', async (t) => {
@@ -82,7 +143,7 @@ describe('staff auth', () => {
     try {
       const auth = createStaffAuth(pool);
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
       const session = await auth.login(email, password);
 
       const stored = await pool.query<{ token_hash: string }>(
@@ -106,7 +167,7 @@ describe('staff auth', () => {
       const clock = fixedClock(new Date('2026-08-23T09:00:00Z'));
       const auth = createStaffAuth(pool, { clock });
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
       const session = await auth.login(email, password);
 
       clock.advance(sessionTtlMs - 1000);
@@ -131,7 +192,7 @@ describe('staff auth', () => {
     try {
       const auth = createStaffAuth(pool);
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
 
       const errors: KernelError[] = [];
       for (const attempt of [
@@ -163,7 +224,7 @@ describe('staff auth', () => {
       const clock = fixedClock(new Date('2026-08-23T09:00:00Z'));
       const auth = createStaffAuth(pool, { clock });
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
         await assert.rejects(auth.login(email, 'wrong-password-here'));
@@ -196,7 +257,7 @@ describe('staff auth', () => {
       const clock = fixedClock(new Date('2026-08-23T09:00:00Z'));
       const auth = createStaffAuth(pool, { clock });
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
 
       for (let attempt = 0; attempt < 4; attempt += 1) {
         await assert.rejects(auth.login(email, 'wrong-password-here'));
@@ -222,14 +283,18 @@ describe('staff auth', () => {
     try {
       const auth = createStaffAuth(pool);
       const email = uniqueEmail();
-      await auth.createOperator({ email, password });
+      await auth.createOperator({ email, password, role: 'admin' });
 
       await assert.rejects(
-        auth.createOperator({ email, password }),
+        auth.createOperator({ email, password, role: 'admin' }),
         (error: KernelError) => error.code === 'conflict',
       );
       await assert.rejects(
-        auth.createOperator({ email: uniqueEmail(), password: 'short' }),
+        auth.createOperator({
+          email: uniqueEmail(),
+          password: 'short',
+          role: 'admin',
+        }),
         (error: KernelError) => error.code === 'invalid',
       );
     } finally {

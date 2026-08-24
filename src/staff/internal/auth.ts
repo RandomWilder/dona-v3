@@ -10,6 +10,7 @@ import type { Pool } from 'pg';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
+import { type StaffRole, validRole } from './roles.ts';
 
 // promisify resolves to scrypt's 3-argument overload; we need the one that
 // takes cost parameters, so the signature is spelled out.
@@ -41,6 +42,9 @@ const attemptWindowMs = 15 * 60 * 1000;
 export interface Operator {
   id: string;
   email: string;
+  // Carried on the session rather than looked up per command, so knowing what a
+  // request may do costs no second query.
+  role: StaffRole;
 }
 
 export interface Session {
@@ -143,7 +147,11 @@ function tokenHash(token: string): string {
 }
 
 export interface StaffAuth {
-  createOperator(input: { email: string; password: string }): Promise<Operator>;
+  createOperator(input: {
+    email: string;
+    password: string;
+    role: StaffRole;
+  }): Promise<Operator>;
   login(email: string, password: string): Promise<Session>;
   logout(token: string): Promise<void>;
   readSession(token: string): Promise<Session | null>;
@@ -157,8 +165,8 @@ export function createStaffAuth(
   const clock = options.clock ?? systemClock;
 
   async function findByEmail(email: string): Promise<Operator | null> {
-    const found = await pool.query<{ id: string; email: string }>(
-      'SELECT id, email FROM staff_operators WHERE email = $1',
+    const found = await pool.query<Operator>(
+      'SELECT id, email, role FROM staff_operators WHERE email = $1',
       [normalizeEmail(email)],
     );
     return found.rows[0] ?? null;
@@ -169,6 +177,9 @@ export function createStaffAuth(
 
     async createOperator(input) {
       const email = normalizeEmail(input.email);
+      // No default: a caller that does not say what an operator may do gets a
+      // refusal, never the most convenient answer.
+      const role = validRole(input.role);
       if (input.password.length < minPasswordLength) {
         throw new KernelError(
           'invalid',
@@ -178,16 +189,16 @@ export function createStaffAuth(
       const id = newId(clock);
       const passwordHash = await hashPassword(input.password);
       const inserted = await pool.query<{ id: string }>(
-        `INSERT INTO staff_operators (id, email, password_hash, created_at)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO staff_operators (id, email, password_hash, role, created_at)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (email) DO NOTHING
          RETURNING id`,
-        [id, email, passwordHash, clock.now()],
+        [id, email, passwordHash, role, clock.now()],
       );
       if (inserted.rows.length === 0) {
         throw new KernelError('conflict', 'email already exists');
       }
-      return { id, email };
+      return { id, email, role };
     },
 
     async login(email, password) {
@@ -213,9 +224,10 @@ export function createStaffAuth(
       const found = await pool.query<{
         id: string;
         email: string;
+        role: StaffRole;
         password_hash: string;
       }>(
-        'SELECT id, email, password_hash FROM staff_operators WHERE email = $1',
+        'SELECT id, email, role, password_hash FROM staff_operators WHERE email = $1',
         [normalized],
       );
       const row = found.rows[0];
@@ -247,7 +259,7 @@ export function createStaffAuth(
       );
       return {
         token,
-        operator: { id: row.id, email: row.email },
+        operator: { id: row.id, email: row.email, role: row.role },
         expiresAt,
       };
     },
@@ -263,9 +275,10 @@ export function createStaffAuth(
       const found = await pool.query<{
         operator_id: string;
         email: string;
+        role: StaffRole;
         expires_at: Date;
       }>(
-        `SELECT s.operator_id, o.email, s.expires_at
+        `SELECT s.operator_id, o.email, o.role, s.expires_at
            FROM staff_sessions s
            JOIN staff_operators o ON o.id = s.operator_id
           WHERE s.token_hash = $1 AND s.expires_at > $2`,
@@ -281,7 +294,7 @@ export function createStaffAuth(
       }
       return {
         token,
-        operator: { id: row.operator_id, email: row.email },
+        operator: { id: row.operator_id, email: row.email, role: row.role },
         expiresAt: new Date(row.expires_at),
       };
     },
