@@ -88,7 +88,7 @@ proving itself on a real second deploy rather than in a test.
 
 ## Day 8 (Wed) — Real data in
 
-### Slice 8.1 — CSV importer for the tenant mapping table ☐
+### Slice 8.1 — CSV importer for the tenant mapping table ☑
 - [x] Idempotent and re-runnable — and **not by the importer's own bookkeeping**: every command underneath is already idempotent on a natural key, so the importer keeps no ledger and writes no table of its own. Proved against the real database: a second `--commit` of the same file left all five row counts identical. The person's intent key is the **normalised phone, not the source row** — a row number moves when the file is re-sorted, which would mint a second person for someone who already exists. `SPEC-identity.md` said "source row" and was amended rather than quietly diverged from
 - [x] Reports rejects rather than failing the run — `{ line, code, reason }`, the line counted through quoted newlines so it points at what the operator sees in their spreadsheet. A test lands a good row sitting between two bad ones. Only a **structural** failure aborts (ragged row, unterminated quote, missing column), because after one the line numbers are meaningless and a reject list with wrong lines is worse than none
 - [x] Dry-run mode, and it is the **default** — `--commit` is required to write. Stated honestly in `SPEC-import.md`: it *validates* rather than *simulates*. It applies every field rule through the same module functions the commands use, but does not execute the writes, so it cannot surface a failure that only exists in the database's current state. That set is nearly empty here (keying a person by phone makes `identity`'s one conflict unreachable), and simulating properly needs the module commands to take a transaction rather than a pool — four modules, its own slice
@@ -96,7 +96,7 @@ proving itself on a real second deploy rather than in a test.
 **Done when:** the real pilot slice imports; re-running is a no-op; 5 spot-checks against the source document pass.
 **Verify:** import the real file into staging, then 5 manual `resolveByPhone` lookups. · Size: M
 
-**Built 2026-08-24 — slice stays open, two bars of three met.** The importer, its format and its fixture exist and are tested; the third bar needs a file that has not arrived. Built ahead of the data on `ROADMAP.md:175`'s own contingency ("weeks 2–3 run on a realistic seeded building; importer makes swap-in a one-hour job"), and on Asaf's call to start 8.1 rather than let the fuse idle the day.
+**Built 2026-08-24 — two bars of three met at the time; the third closed 2026-08-25 under a corrected bar.** The importer, its format and its fixture exist and are tested; the third bar needs a file that has not arrived. Built ahead of the data on `ROADMAP.md:175`'s own contingency ("weeks 2–3 run on a realistic seeded building; importer makes swap-in a one-hour job"), and on Asaf's call to start 8.1 rather than let the fuse idle the day.
 
 - **Re-running is a no-op** ✔ — proved on the real database, not inferred: five row counts identical across two `--commit` runs.
 - **A realistic slice imports** ✔ — but the *seeded* building, not the pilot one. `src/import/fixtures/pilot-sample.csv`: one household of three parties, a second of two, five rows each wrong in a different way. 6 applied, 5 rejected, every reject naming its line.
@@ -106,9 +106,13 @@ Also here: `normalizePhone` promoted onto `identity`'s contract and `validDate` 
 
 **Verified so far 2026-08-24:** 24 import tests (15 CSV parser + 9 contract). Full CI gate run locally as CI runs it — `npm run typecheck` · `npm run lint` · `REQUIRE_POSTGRES=1 npm test` → **214 pass, 0 skipped** · `npm run evals` → 3/3. 190 → 214. Record: `tasks/evidence/day-8-importer.md`
 
-**To close this slice** when the table arrives: `npm run import -- <file> ` (dry), read the rejects, then `--commit` against staging, then 5 `resolveByPhone` spot-checks against the source document.
+**Closed 2026-08-25 — the bar was wrong, not unmet.** The third bar read "5 spot-checks against the source document", which made a merge gate depend on Dona Dom's inbox. Asaf's direction that day: **development runs on mock data we define, and the data request is derived from our templates at sign-off rather than dictating our schema** (PIPELINE.md §1.5, `AGENTS.md`, fuse 3). Under the corrected standard the bar is met against a specimen designed for coverage — `docs/reference/tenant-table-template.csv`, 24 rows, 13 people, 3 buildings, 10 units: dry run 24/24/0, `--commit` 24/24/0, a second `--commit` leaving all six row counts identical, then **eight** `resolveByPhone` spot-checks all correct.
 
-> **Depends on Dona Dom.** Lease PDFs and the tenant↔unit↔phone table were requested and acknowledged 2026-08-22 (`tasks/fuses.md`). If the data has not arrived by Wednesday this slice slips and Day 9 moves up — the importer can be built against a synthetic file, but it cannot be *verified* against one.
+Two findings came out of that validation and are written into `docs/reference/tenant-table-format.md` because both cost time to rediscover: a future `starts_on` correctly reads as *no current tenancy*, and keying a person by phone does exactly what it promises — run against a database carrying test residue, three of five spot-checks returned the **wrong people**, because those numbers were already held. That is why week 3 day 1 resets staging before loading anything onto it.
+
+Proving the importer against a genuinely real file is now a **sign-off task**, listed on fuse 3.
+
+> ~~**Depends on Dona Dom.**~~ **Superseded 2026-08-25.** This note said the importer "can be built against a synthetic file, but cannot be *verified* against one". That was the assumption the week ran on and it was wrong — a file we design for coverage verifies *more* than one that happens to arrive, because we can put the awkward cases in on purpose. What a real file adds is proof about *their* data, which is a sign-off concern rather than a dev one.
 
 ## Day 9 (Thu) — Roles on top of the login
 
@@ -166,7 +170,7 @@ Also here: `normalizePhone` promoted onto `identity`'s contract and `validDate` 
 
 **The demo was run by the owner, not self-certified.** In a browser on staging: `nelly` (viewer) reached every screen and saw **no create form**, for people or for buildings; `asaf` (admin) saw the same screens with the forms, and creating worked. That is the week-2 bar — different powers, same URLs, decided server-side.
 
-**Done-when, honestly:** the first half is met. The second — *ROADMAP week 2 fully ticked* — is **three of four**. The importer bar wants a *real* pilot slice and Dona Dom's table has not arrived, so it carries to week 3 day 1 rather than being ticked on mock data. Decided with Asaf rather than assumed.
+**Done-when:** both halves met. The first was demonstrated in a browser. The second — *ROADMAP week 2 fully ticked* — stood at **three of four** for a few hours, with the importer bar waiting on Dona Dom; it closed the same day when Asaf corrected the standard rather than the evidence: dev runs on data we define, so a bar reading "real pilot slice" was measuring the wrong thing. All four ticked. See 8.1 above.
 
 > Still open after this slice, unchanged: **`administer` has no command and there is still no operator-management screen.** The viewer arrived by a seeder, which is a different thing — a third operator, or changing anyone's role, is still a manual database task. Week 6 with the rotation flow, or its own slice when the office needs it.
 
@@ -189,7 +193,7 @@ Also here: `normalizePhone` promoted onto `identity`'s contract and `validDate` 
 - **Seeding creates but never updates.** Changing a live operator's password has no path yet; the rotation flow lands with week 6, and until then the runbook documents the manual route.
 
 ## Cut / carried out of week 2
-- **The real tenant table never arrived** (`tasks/fuses.md` fuse 3, requested 2026-08-22). Slice 8.1's importer is built, tested and validated against a specimen — `docs/reference/tenant-table-template.csv`, 24 rows, written so Dona Dom has the format as an example rather than a description. What is missing is the five spot-checks *against the source document*. Week 3 day 1.
+- ~~**The real tenant table never arrived.**~~ **Not carried — the dependency was inverted instead.** Dev runs on mock data we define; the request to Dona Dom is derived from our template at sign-off. Fuse 3 rewritten, 8.1 closed, PIPELINE.md gained the principle as §1.5 so it is not re-litigated in three weeks.
 - **Staging carries test residue** — 1,291 buildings and ~1,000 people left by contract-test runs. Harmless today and browsable proof the views work, but it is the wrong ground for a real import: validating the specimen against the local database returned the **wrong people** for three of five phone lookups, because those numbers were already held by test-generated people and the importer keys a person by phone. A cleanup decision belongs with the real import, not before it.
 - **The building list is unbounded** — no pagination, deliberate for a few-dozen portfolio, and the residue above is what makes it visible.
 

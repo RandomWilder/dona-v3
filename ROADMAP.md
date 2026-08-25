@@ -71,19 +71,19 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 **Goal: the real pilot building lives in the system; staff access is role-gated and audited.**
 
 - [x] Modules `identity` / `portfolio` / `occupancy`: schemas, commands, contract tests. **Done when:** phone → person → unit → current occupancy resolves.
-- [ ] CSV importer for the tenant mapping table (idempotent, re-runnable, reports rejects). **Done when:** real pilot slice imported; 5 spot-checks pass. — **Built and carried to week 3, not ticked.** The importer exists, is tested, and was validated end to end against a specimen file (`docs/reference/tenant-table-template.csv`): 24/24 applied, re-run a no-op, eight `resolveByPhone` spot-checks correct. The bar says *real* pilot slice, and Dona Dom's table has not arrived (`tasks/fuses.md` fuse 3, outstanding since 2026-08-22). Ticking it on mock data would be PIPELINE.md §9's "trusting the demo".
+- [x] CSV importer for the tenant mapping table (idempotent, re-runnable, reports rejects). **Done when:** ~~real~~ **a defined** pilot slice imported; 5 spot-checks pass. — **Bar amended 2026-08-25, and the amendment is the point.** Development runs on mock data we define (PIPELINE.md §1.5); real records arrive at phase-1 sign-off and the data request is *derived from* our template rather than dictating it. So "real pilot slice" was the wrong standard for a dev bar — it made a merge gate depend on someone else's inbox, and it held this box open for three days. The bar is now the specimen we designed for coverage, and it is met: `docs/reference/tenant-table-template.csv`, 24/24 applied, re-run a no-op, **eight** `resolveByPhone` spot-checks correct — including one person resolving from two phone spellings to two tenancies with different access, and an ended lease correctly reading as a vacancy. Proving the importer against a *real* file is now a sign-off task, listed on fuse 3.
 - [x] Staff auth: email+password (**scrypt** — chosen in slice 5.2: `node:crypto` has it built in, so the container needs no native build toolchain; argon2id revisited in week 6 hardening), server sessions, roles **admin / operator / viewer**; permission checks server-side per command; every staff action writes an audit record. **Done when:** viewer can't mutate — proven by test, not by hidden buttons.
 - [x] Admin shell: nav (queue · conversations · approvals · reports · properties · people · guidance) + people/properties list & create views. **Done when:** the pilot building is browsable on staging.
 
 **Checkpoint demo:** log in as viewer vs admin — different powers; audit trail shows both sessions.
 **Cut line:** approvals + reports nav items can be dead links this week.
 
-**Closed 2026-08-25 — three of four, one externally blocked.** The demo was run on staging by
+**Closed 2026-08-25 — all four.** The demo was run on staging by
 the owner in a browser: `nelly` (viewer) saw every screen and no create form; `asaf` (admin) saw
-the same screens with the forms, and creating worked. `v0.2.0` on prod. The importer bar above
-is the only one open and it is waiting on someone else's inbox, not on us — it moves to week 3
-day 1 rather than being marked done. Cut line held: approvals and reports render empty states
-rather than dead links, which cost nothing.
+the same screens with the forms, and creating worked. `v0.2.0` on prod, boot line `viewer seed: created`.
+Cut line held: approvals and reports render empty states rather than dead links, which cost
+nothing. The importer bar closed later the same day, when its standard was corrected from
+"real data" to "data we defined" — see above, and PIPELINE.md §1.5.
 
 ## Week 3 — Lease ingestion & grounded answers (API-level)
 

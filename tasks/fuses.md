@@ -19,7 +19,44 @@
   - Israeli deliverability: signup OTP reached Asaf's Israeli number via Twilio — positive signal; own-service test will confirm.
   - Branded alphanumeric sender ID in Israel needs domestic pre-registration (~1 week) — only needed later for branded sends, not for OTP.
 
-## 3. Data request to Dona Dom
+## 3. Data request to Dona Dom  — **NO LONGER A DEV BLOCKER (2026-08-25)**
+
+> **Reframed by Asaf, 2026-08-25, and this is the important line in this file.**
+> **Development runs on mock data we define. Real tenant data enters only at phase-1
+> sign-off, after the system has proved itself.** We do not wait for Dona Dom's format and
+> then bend to it — we design the format for optimal system coverage, build against it, and
+> the data request we eventually send them is *derived from our own templates*.
+>
+> This inverts the dependency that had been holding day 8 open since 2026-08-22. Nothing in
+> weeks 3–5 is blocked on this fuse any more. What remains is a **deliverable owed towards
+> sign-off**, not an input owed to us now:
+>
+> - `docs/reference/tenant-table-template.csv` — the tenant/unit/phone format, as a
+>   filled-in example rather than a description
+> - `docs/reference/tenant-table-format.md` — the column rules and what the importer does
+>   with a bad file
+>
+> Both grow as the system does. At sign-off they become the request.
+>
+> **Still true, and the one piece of real data in the system:** a real signed lease arrived
+> 2026-08-24 and sits in both document buckets. See "The real lease" below.
+
+### The real lease — a stated exception with a deadline
+
+Asaf's call on 2026-08-25, taken against the recommendation to mock it, and recorded with the
+risk rather than quietly: **the real signed lease stays for week 3's ingestion work only**,
+because it is messy in ways a lease we write ourselves would not be, and extraction tested
+against our own assumptions is not tested.
+
+What that costs, stated: it is a real contract with real names, ID numbers and signature
+images, living in an environment with **no alerting, no PITR, no retention rule and no
+deletion path** (all week 6). It is the sole reason staging is not a freely breakable
+environment.
+
+**Removal is owed at phase-1 sign-off** — from `gs://dona-v3-staging-docs` and
+`gs://dona-v3-prod-docs` both. This line exists so it cannot drift past that.
+
+### Original request (history)
 - Fired: 2026-08-22 ✅
 - Status: **sent and acknowledged** — Dona Dom confirmed a set of all relevant documents will be sent, organized **by apartment**, phone numbers included.
 - Who owes what: Dona Dom owes the document set; on receipt, Asaf + Claude map which document is needed at which stage of residency (feeds the week-2 importer and week-3 ingestion design).

@@ -21,6 +21,7 @@
 - UI: self-contained HTML + `/ui/tokens.css` tokens only; Hebrew RTL with logical CSS properties; no bundler.
 
 ## Boundaries
+- **Development runs on mock data we define** (`docs/reference/`). Real tenant data enters only at phase-1 sign-off — we design the format for coverage and *derive* the data request from our templates, never the reverse. No slice is ever blocked waiting for a customer file. The one live exception, with a removal deadline, is the real lease in `tasks/fuses.md`.
 - Validate at every edge. Secrets only via env / Secret Manager — never in code, logs, or prompts.
 - Plan mode before touching: kernel, migrations, auth/verification, or 2+ modules in one change.
 - CI (`.github/workflows/ci.yml`) runs typecheck + lint + tests against a Postgres service and the golden set; both checks are required on `main`. Set `REQUIRE_POSTGRES=1` when a run must fail rather than skip the durability suite.

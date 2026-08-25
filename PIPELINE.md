@@ -10,7 +10,13 @@ How this project gets built: one developer directing agents (Claude Code + Curso
 2. **The spec is the prompt.** Requirements live in files the agents read (`SPEC.md`, `SPEC-<module>.md`); code sessions start from the spec, not from a chat description. Specs are executable gates, not documentation.
 3. **CI is the reviewer.** Solo means no human code review — so typecheck, lint, contract tests, and the agent golden set gate every merge. Never merge red, never "fix it after".
 4. **Small verified slices.** One vertical slice per session; plan → implement → verify → deploy to staging. If a task can't be described with 3 acceptance bullets, split it before starting.
-5. **The golden dataset is the most important reliability artifact.** Our product IS an LLM agent — every production failure becomes a golden case, and CI reruns the whole set on any change to prompts, models, retrieval, or tools.
+5. **Mock data is the development substrate, by design and not by shortage.** We define the
+   fixtures and templates the system is built against, chosen for coverage of the cases that
+   break things rather than for whatever a customer happened to send. Real data arrives at
+   phase-1 sign-off, and the data request that asks for it is *generated from* our templates —
+   so the schema is proved before anyone's real records touch it, and no slice ever stalls on
+   someone else's inbox. Adopted 2026-08-25 after fuse 3 held day 8 open for three days.
+6. **The golden dataset is the most important reliability artifact.** Our product IS an LLM agent — every production failure becomes a golden case, and CI reruns the whole set on any change to prompts, models, retrieval, or tools.
 
 ## 2. Division of labor: Claude Code vs Cursor
 

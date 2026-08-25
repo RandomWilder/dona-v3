@@ -11,19 +11,43 @@ Previous week: `tasks/week-2.md` (closed — the pilot building is browsable, ro
 
 ---
 
-## Day 11 (Mon) — The blocked bar, and the ground it lands on
+## Day 11 (Mon) — Make the ground match the plan
 
-### Slice 11.1 — Close 8.1 with the real table ☐
-> **Carried from week 2. Blocked on Dona Dom** (`tasks/fuses.md` fuse 3, requested 2026-08-22, outstanding). Everything else in this slice is ready: the importer is built and tested, and `docs/reference/tenant-table-template.csv` is the format written as an example so the file arrives in a shape that loads.
+> **Nothing here waits on anyone.** Fuse 3 stopped being a blocker on 2026-08-25: development
+> runs on mock data we define (PIPELINE.md §1.5), and the data request to Dona Dom is derived
+> from our templates at sign-off. Slice 8.1 closed under that corrected bar.
 
-- [ ] `npm run import -- <file>` (dry) → read every reject → `--commit` against staging
-- [ ] **5 spot-checks against the source document** — the bar that cannot be faked and the only reason this is still open
-- [ ] **Decide staging's residue first, not after.** Staging holds ~1,291 test buildings and ~1,000 test people. Validating the specimen locally returned the *wrong people* for three of five lookups, because the importer keys a person by phone and those numbers were already taken. A real import onto dirty ground repeats that with real tenants — so this slice starts by deciding: clean staging, or import into a fresh database
+### Slice 11.1 — Reset staging and seed it from the template ☐
+- [ ] **Staging carries ~1,291 test buildings and ~1,000 test people** left by contract-test
+      runs against the shared database. It is the wrong ground for anything: validating the
+      template against a dirty database returned the **wrong people** for three of five phone
+      lookups, because the importer keys a person by phone and those numbers were already
+      held by test-generated people. On staging that would be a real isolation failure wearing
+      a mock costume
+- [ ] Truncate the **domain** tables only — `identity` / `portfolio` / `occupancy`. Leave
+      `staff_operators`, `staff_sessions` and `audit_log` intact: the logins are in use and the
+      week-2 audit trail is evidence
+- [ ] Re-seed from `docs/reference/tenant-table-template.csv`, so staging *is* the mock
+      building we designed — 3 buildings, 10 units, 13 people, one vacancy, one guarantor
+- [ ] **Repeatable, not a one-off.** `infra/reset-staging-data.sh`, in the repo, reviewable —
+      contract tests will start depositing residue again the moment CI runs, so this is a
+      command we will want more than once
+- [ ] **A local→Cloud SQL path has to exist first** and does not today: no `cloud-sql-proxy`
+      installed, and nothing outside the app has ever reached staging's database. Establishing
+      it is part of this slice and wants writing into `docs/runbook-deploy.md`
 
-**Done when:** the real pilot slice imports; re-running is a no-op; 5 spot-checks pass.
-**Verify:** the five lookups, read against the document by a human. · Size: M
+**Done when:** `נכסים` on staging shows exactly the template's three buildings, and a phone
+lookup returns the person the CSV says it should.
+**Verify:** browse staging; five `resolveByPhone` spot-checks against the CSV. · Size: M
 
 ### Slice 11.2 — Lease upload → GCS, attached to an occupancy ☐
+> **Working document:** the real signed lease already in the buckets. Asaf's call on
+> 2026-08-25, taken against the recommendation to mock it and recorded with its cost on fuse 3:
+> a lease we write ourselves would be clean in exactly the ways extraction needs to be tested
+> against. **Its removal from both buckets is owed at phase-1 sign-off** — it is the one piece
+> of real data in the system, and it holds ID numbers and signatures in an environment with no
+> alerting, no PITR and no deletion path.
+
 - [ ] Admin upload on the unit view; object lands in `gs://dona-v3-<env>-docs` under a path that carries the **place and never the people** (7.0's rule — paths reach logs)
 - [ ] The document row is attached to an **occupancy**, not a unit or a person: that is the scope every later read is filtered by
 - [ ] `objectCreator` granted in `bootstrap.sh` — 7.0 deliberately granted read only, "until the slice that needs it". This is that slice
@@ -102,8 +126,9 @@ Previous week: `tasks/week-2.md` (closed — the pilot building is browsable, ro
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
 
 ## Carried in from weeks 1–2
-- **The real tenant table** — fuse 3, and slice 11.1's whole content.
-- **Staging carries test residue** (~1,291 buildings, ~1,000 people) and **the building list is unbounded**. 11.1 decides both.
+- ~~**The real tenant table**~~ — no longer carried. Fuse 3 was reframed 2026-08-25: dev runs on data we define, the request is derived from our templates at sign-off, and 8.1 closed under the corrected bar.
+- **Staging carries test residue** (~1,291 buildings, ~1,000 people) — slice 11.1. **The building list is unbounded**, which the residue made visible; a few-dozen-building portfolio does not need pagination, and after 11.1 staging will hold three.
+- **The real lease leaves both buckets at phase-1 sign-off.** Fuse 3 holds the deadline.
 - **`administer` has no command and there is no operator-management screen.** The week-2 viewer arrived by a seeder; a third operator or a role change is still a manual database task.
 - **`staff`'s session sweep makes the suite flaky.** `login()` and `readSession()` each delete every expired session using their own clock, and `node --test` runs files in parallel against one database. Seen once in five gate runs during 7.1, and once more in 10.1 — uncaptured, and not reproduced in 17 runs after. Wants `SPEC-staff.md` reasoning first.
 - **Overlapping tenancies on one unit are not prevented in general.** `UNIQUE (unit_id, starts_on)` stops the re-run-import case; two tenancies with different start dates and overlapping ranges are still insertable. The fix is an exclusion constraint over a `daterange`, needing `btree_gist` — whether the Cloud SQL runtime user may `CREATE EXTENSION` is unverified.
