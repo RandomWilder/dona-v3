@@ -58,7 +58,7 @@ its three flats 2 / 5 / 8 at floors 1 / 2 / 4 — the CSV, to the row. Merged as
 [#16](https://github.com/RandomWilder/dona-v3/pull/16); staging serves `1f01462`. Evidence:
 `tasks/evidence/day-11-staging-reset.md`.
 
-### Slice 11.2 — Lease upload → GCS, attached to an occupancy ☐
+### Slice 11.2 — Lease upload → GCS, attached to an occupancy ☑
 > **Working document:** the real signed lease already in the buckets. Asaf's call on
 > 2026-08-25, taken against the recommendation to mock it and recorded with its cost on fuse 3:
 > a lease we write ourselves would be clean in exactly the ways extraction needs to be tested
@@ -66,12 +66,36 @@ its three flats 2 / 5 / 8 at floors 1 / 2 / 4 — the CSV, to the row. Merged as
 > of real data in the system, and it holds ID numbers and signatures in an environment with no
 > alerting, no PITR and no deletion path.
 
-- [ ] Admin upload on the unit view; object lands in `gs://dona-v3-<env>-docs` under a path that carries the **place and never the people** (7.0's rule — paths reach logs)
-- [ ] The document row is attached to an **occupancy**, not a unit or a person: that is the scope every later read is filtered by
-- [ ] `objectCreator` granted in `bootstrap.sh` — 7.0 deliberately granted read only, "until the slice that needs it". This is that slice
+- [x] Admin upload on the unit view; object lands in `gs://dona-v3-<env>-docs` under a path that carries the **place and never the people** (7.0's rule — paths reach logs)
+- [x] **The path convention changed, from a readable address to ids**, and the reason is worth
+      keeping: generating 7.0's hand-made shape means transliterating Hebrew *in code*, and two
+      streets that transliterate alike file one flat's lease under another's — a correctness
+      failure with isolation flavour, arriving quietly. Ids also do not rot when an address is
+      corrected. The database row is the index now; 7.0's one object is grandfathered
+- [x] The document row is attached to an **occupancy**, not a unit or a person: that is the scope
+      every later read is filtered by. The tenancy is resolved **server-side** from the unit and
+      is never a hidden field — a caller-supplied id would let a crafted post file a document
+      against a tenancy the operator never opened
+- [x] `objectCreator` granted in `bootstrap.sh` — and deliberately **not** `objectAdmin`: the app
+      can write a contract and read one, and cannot destroy one, which matters while there is no
+      retention rule and no deletion path
+- [x] **The finding:** `idempotency_keys`' sibling problem, one slice on — a document has no
+      natural key, so this is the module's first command that is *not* idempotent, and it says so
+      rather than pretending. A re-upload is a second document, because a re-upload is usually a
+      correction and discarding it would lose the correction
 
 **Done when:** a real lease uploads from the admin and comes back down attached to the right tenancy.
 **Verify:** upload on staging, then read the object back and confirm the path names no person. · Size: M
+**Closed 2026-08-25 — both halves.** The real signed lease, 1,695,258 bytes, uploaded by the owner
+in a browser on staging and read back byte-for-byte, at a path that is four ids and the word
+`lease`. Its **own address** was seeded as a fourth building with **zero parties**, so the one real
+contract in the system hangs off a tenancy matching its contents and no real person entered the
+database. `app-staging`'s new write grant is proven by the object existing. Merged as
+[#18](https://github.com/RandomWilder/dona-v3/pull/18); staging serves `bfec0bb`, boot line
+`docs: gs://dona-v3-staging-docs`. Evidence: `tasks/evidence/day-11-lease-upload.md`.
+
+**Day 11 closed 2026-08-25 — both slices.** Staging is the mock building we designed, and the one
+real lease is in it, attached to its own tenancy and to nobody.
 
 ## Day 12 (Tue) — Ingestion
 
@@ -146,7 +170,9 @@ its three flats 2 / 5 / 8 at floors 1 / 2 / 4 — the CSV, to the row. Merged as
 ## Carried in from weeks 1–2
 - ~~**The real tenant table**~~ — no longer carried. Fuse 3 was reframed 2026-08-25: dev runs on data we define, the request is derived from our templates at sign-off, and 8.1 closed under the corrected bar.
 - ~~**Staging carries test residue** (~1,291 buildings, ~1,000 people)~~ — **withdrawn 2026-08-25, measured false.** Staging held one person and no buildings; the residue is local and CI-ephemeral. Closed by 11.1, which now seeds rather than cleans. **The building list is unbounded** remains true and is now un-evidenced by anything on staging — a few-dozen-building portfolio does not need pagination, and staging holds three. Carried to week 6 hardening rather than week 3.
-- **The real lease leaves both buckets at phase-1 sign-off.** Fuse 3 holds the deadline.
+- **The real lease leaves both buckets at phase-1 sign-off** — and now `occupancy_documents` too, which is a row a deletion path will have to know about. Fuse 3 holds the deadline.
+- **A document cannot be removed, corrected or replaced** (11.2). Uploading again adds a second document rather than a version — honest for a correction, and not a substitute for an edit path.
+- **A reset orphans document objects on purpose** (11.2). `occupancy_documents` is truncated with the domain tables; the objects stay in the versioned bucket, because deleting is the one operation this system has no path for until week 6.
 - **`administer` has no command and there is no operator-management screen.** The week-2 viewer arrived by a seeder; a third operator or a role change is still a manual database task.
 - **`staff`'s session sweep makes the suite flaky.** `login()` and `readSession()` each delete every expired session using their own clock, and `node --test` runs files in parallel against one database. Seen once in five gate runs during 7.1, and once more in 10.1 — uncaptured, and not reproduced in 17 runs after. Wants `SPEC-staff.md` reasoning first.
 - **Overlapping tenancies on one unit are not prevented in general.** `UNIQUE (unit_id, starts_on)` stops the re-run-import case; two tenancies with different start dates and overlapping ranges are still insertable. The fix is an exclusion constraint over a `daterange`, needing `btree_gist` — whether the Cloud SQL runtime user may `CREATE EXTENSION` is unverified.
