@@ -350,6 +350,116 @@ describe('occupancy contract', () => {
     });
   });
 
+  it('reads a unit forward to the people in it', async (t) => {
+    // The direction slice 10.1 needed and 7.1 did not build: the admin unit
+    // view starts from a place, where resolveByPhone starts from a person.
+    await withPool(t, async (pool) => {
+      const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+      const { identity, portfolio, occupancy } = world(pool, clock);
+
+      const tenant = await personWithPhone(identity, 'דנה כהן');
+      const guarantor = await personWithPhone(identity, 'משה כהן');
+      const building = await portfolio.addBuilding(uniqueAddress(), actor);
+      const unit = await portfolio.addUnit(
+        { buildingId: building.id, label: '3' },
+        actor,
+      );
+
+      // Empty before anyone lives there — a vacancy, not an error.
+      assert.equal(await occupancy.findCurrentTenancy(unit.id), null);
+
+      const tenancy = await occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-09-01', parkingSpot: 'B-12' },
+        actor,
+      );
+      await occupancy.addParty(
+        { tenancyId: tenancy.id, personId: tenant.id, role: 'tenant' },
+        actor,
+      );
+      await occupancy.addParty(
+        { tenancyId: tenancy.id, personId: tenant.id, role: 'billed' },
+        actor,
+      );
+      await occupancy.addParty(
+        { tenancyId: tenancy.id, personId: guarantor.id, role: 'guarantor' },
+        actor,
+      );
+
+      const view = await occupancy.findCurrentTenancy(unit.id);
+      assert.ok(view);
+      assert.equal(view.tenancy.id, tenancy.id);
+      assert.equal(view.tenancy.parkingSpot, 'B-12');
+      assert.equal(view.unit.unit.id, unit.id);
+      assert.equal(view.unit.building.id, building.id);
+
+      // The same two-answers-one-tenancy 7.1 proved from the phone side: she
+      // lives behind the door, he is only on the hook for it.
+      const byPerson = new Map(view.parties.map((p) => [p.personId, p]));
+      assert.deepEqual(byPerson.get(tenant.id)?.roles, ['tenant', 'billed']);
+      assert.equal(byPerson.get(tenant.id)?.access, 'resident');
+      assert.deepEqual(byPerson.get(guarantor.id)?.roles, ['guarantor']);
+      assert.equal(byPerson.get(guarantor.id)?.access, 'party');
+
+      // Names are not this read's to give: the page composes them through
+      // identity, which is what keeps the join free of identity's facts.
+      assert.equal('displayName' in (byPerson.get(tenant.id) ?? {}), false);
+    });
+  });
+
+  it('finds no current tenancy on a unit whose lease has ended', async (t) => {
+    await withPool(t, async (pool) => {
+      const pool_ = pool;
+      const setup = fixedClock(new Date('2026-09-15T09:00:00Z'));
+      const { identity, portfolio, occupancy } = world(pool_, setup);
+
+      const tenant = await personWithPhone(identity, 'דנה כהן');
+      const building = await portfolio.addBuilding(uniqueAddress(), actor);
+      const unit = await portfolio.addUnit(
+        { buildingId: building.id, label: '3' },
+        actor,
+      );
+      const tenancy = await occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-09-01', endsOn: '2026-09-30' },
+        actor,
+      );
+      await occupancy.addParty(
+        { tenancyId: tenancy.id, personId: tenant.id, role: 'tenant' },
+        actor,
+      );
+
+      const at = async (instant: string) => {
+        const { occupancy: asOf } = world(pool_, fixedClock(new Date(instant)));
+        return (await asOf.findCurrentTenancy(unit.id)) !== null;
+      };
+
+      // Not yet started, and after it ended.
+      assert.equal(await at('2026-08-31T06:00:00Z'), false);
+      assert.equal(await at('2026-10-01T06:00:00Z'), false);
+      // Both ends inclusive.
+      assert.equal(await at('2026-09-01T06:00:00Z'), true);
+      assert.equal(await at('2026-09-30T06:00:00Z'), true);
+
+      // The two that discriminate, pinned from each side as resolveByPhone's
+      // are: 21:30Z is 00:30 the next morning in Tel Aviv, and both flip if the
+      // AT TIME ZONE is dropped from the shared predicate.
+      //
+      // 00:30 on 1 Oct — the flat is empty, though UTC still says 30 Sep.
+      assert.equal(await at('2026-09-30T21:30:00Z'), false);
+      // 00:30 on 1 Sep, the night she moved in — hers, though UTC says 31 Aug.
+      assert.equal(await at('2026-08-31T21:30:00Z'), true);
+    });
+  });
+
+  it('rejects a unit id that is not an id', async (t) => {
+    await withPool(t, async (pool) => {
+      const { occupancy } = world(pool);
+      await assert.rejects(
+        () => occupancy.findCurrentTenancy('not-a-uuid'),
+        (error: KernelError) => error.code === 'invalid',
+      );
+    });
+  });
+
   it('answers a number nobody holds with null, and a person with no tenancy with an empty list', async (t) => {
     await withPool(t, async (pool) => {
       const { identity, occupancy } = world(pool);

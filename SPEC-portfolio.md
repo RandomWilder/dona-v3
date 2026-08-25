@@ -134,6 +134,40 @@ the rule for the whole codebase:
 - a fetch by a **system id** returns `not_found`, because the id must have been issued by
   something, so a miss is a dangling reference and a bug somewhere.
 
+### `listBuildings() → Building[]`
+
+Every building, ordered city → street → house number, which is how someone looking for one
+scans a list rather than by insertion time. Added in 10.1 because the properties view had no
+way to learn an id: `getUnit` and `getBuilding` both take one, and until this existed nothing
+could produce the first.
+
+**Access notes are never returned here**, not even opt-in. `getUnit`'s rule is that a caller
+must ask for an entry code; a list is exactly the shape where a field nobody asked for gets
+swept into a page, a log, or a screenshot. Asking for one building's notes is a decision
+about one building — there is no legitimate "give me every entry code in the portfolio", so
+the option is not offered.
+
+**No pagination, and it is not an oversight.** The pilot is one building; Dona Dom's whole
+portfolio is a few dozen. A `LIMIT` with no cursor would be a silently truncated list, which
+is worse than a long one. When the count justifies it, the ordering above is already the
+stable sort a keyset cursor needs.
+
+### `getBuilding(buildingId, options?) → BuildingView`
+
+`{ building, units }` — the building and its units. The second half of the browse path:
+`listBuildings` → `getBuilding` → `getUnit`.
+
+**Units come back in natural order, which `label_key` alone does not give.** The first draft
+of this section claimed the normaliser's leading-zero stripping was enough for `2` to sort
+before `10`; the test disagreed, and the spec was wrong rather than the test — `label_key` is
+text, and a plain sort lists a real staircase as 1, 10, 11, 2. So a purely numeric label sorts
+as a number and everything else (`3א`, `קרקע`) sorts as text after it. This is presentation
+order for one building's unit list and nothing depends on it beyond that.
+
+Access notes are opt-in exactly as `getUnit`'s are, and the option covers **both** the
+building and its units — one flag, because a caller who has asked for entry codes has asked.
+A miss is `not_found`, by the system-id rule above.
+
 ## Audited
 
 All three mutations go through `audit.around` with the caller's `actor`:
@@ -145,15 +179,22 @@ and carries the address in `inputs` instead: its id is not known beforehand, and
 repeat the caller receives the existing building, so a freshly minted id would name a row
 that was never created.
 
-`getUnit` is a read and writes nothing, matching `identity.findByPhone`. But note that an
-access-notes read is a disclosure, and when a vendor is first sent an entry code (week 5)
-**that** is the moment that needs its own audit record.
+All four reads — `getUnit`, `listBuildings`, `getBuilding`, and `findByPhone`'s counterpart
+in `identity` — write nothing. This module audits changes, not glances. Who *looked* at a
+place is a real question, and it is answered one layer up: `staff` audits the detail views
+that put a unit and the people in it on a screen (`SPEC-staff.md`, slice 10.1). Recording it
+here as well would double every row for no extra answer, and this module cannot see the
+operator behind the read in any case.
+
+Note still that an access-notes read is a disclosure, and when a vendor is first sent an
+entry code (week 5) **that** is the moment that needs its own audit record.
 
 ## Not yet in place
 
-- **No listing.** `listBuildings`, or the units under a building, arrive with the admin
-  properties view in slice 10.1 — the screen that needs them is the thing that should
-  shape them.
+- ~~**No listing.**~~ Closed in 10.1: `listBuildings` and `getBuilding` above, shaped by the
+  properties view that needed them.
+- **Still no search and no filter.** The list is the whole list. A city filter is trivial to
+  add and nothing yet asks for it.
 - **No edits and no deletes.** A misspelled building name is corrected by hand until an
   admin screen owns it. This is why first-result-wins idempotency is safe to ship.
 - **No sub-areas** (rooms, parking bays, storage) and no geo coordinates. Neither is

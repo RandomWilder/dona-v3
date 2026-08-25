@@ -130,6 +130,25 @@ Normalises, then resolves phone → person with kinds attached. **A miss returns
 failures. This follows `staff.findByEmail`. The caller decides what an unknown number
 means — for the channel adapter in week 4 it means "offer a callback, disclose nothing".
 
+### `getPeople(ids) → Person[]`
+
+Names for ids someone already holds. Added in 10.1 for the unit view: `occupancy` returns a
+tenancy's parties as `personId` and no name — correctly, since names are this module's fact,
+not the join's — so something must turn a handful of ids into people. That something is
+`staff`, which SPEC.md already defines as depending on both.
+
+**Batch, not one-at-a-time**, because the caller's shape is a list: a unit with a tenant, a
+co-tenant and a guarantor is one query rather than three. Unknown ids are **absent from the
+result rather than an error** — the caller is rendering a page, and one dangling party should
+leave the other two on screen. Order is not promised; callers index by id.
+
+### `listPhones(personId) → PhoneLink[]`
+
+Every number that reaches one person, oldest first — the person view's own content, and the
+inverse of `findByPhone`. Takes a system id and so would be `not_found` on a miss, except
+that it cannot miss: a person with no numbers is `[]`, which is a true answer about someone
+who exists.
+
 ## Audited
 
 Both mutations are wrapped in the kernel's `audit.around`, so an audit row is written
@@ -148,8 +167,11 @@ Phone numbers and names reach `audit_log` deliberately — it is a table, not a 
 
 ## Not yet in place
 
-- **Reads are not audited.** `findByPhone` writes nothing. Its callers — agent tools, the
-  admin people view — audit their own use, and a PII-read trail is a week-6 concern.
+- **Reads are not audited here, and now have a caller that does it.** `findByPhone`,
+  `getPeople` and `listPhones` all write nothing. As this section predicted, the admin people
+  view audits its own use: `staff` writes a row when a person is *opened* and none when a list
+  is merely rendered (`SPEC-staff.md`, slice 10.1). The trail names the operator, which this
+  module cannot see. A broader PII-read trail stays a week-6 concern.
 - **No merge or split of people**, and no way to remove a phone or a kind. Everything here
   is additive; correcting a mistaken import is a manual database task until an admin
   screen owns it (week 2 day 10 lists, week 6 for edits).

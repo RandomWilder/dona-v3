@@ -83,6 +83,29 @@ SPEC.md rule 6 — one presentation system — lives here: the kernel owns the t
 
 `ui/tokens.test.ts` enforces the invariant from the outside: no shell may contain a hex colour, a `fonts.googleapis` URL, or a physical `left:`/`right:`. It fails on the HTML, not on the CSS, because that is where the discipline actually erodes.
 
+## Escaping data into HTML (`ui/html.ts`, slice 10.1)
+
+Until 10.1 every screen was a static file and no request-derived or database-derived string
+ever reached the markup — `staff/ui/routes.ts` said so as a property of the login page. The
+people and properties views end that: a tenant's name, a building's street, a unit's label
+and an operator's own typing all now land inside HTML. So the escaper lands in the kernel
+before the first view needs it, on the same argument that moved `requireText` here in 7.1 —
+`channel` renders tenant-supplied text in week 4, and a second copy would drift.
+
+- **`escapeHtml(value)`** — `&`, `<`, `>`, `"`, `'` to their entities, ampersand first so an
+  escape is never itself re-escaped. Non-strings are refused rather than coerced: `String(x)`
+  on an object yields `[object Object]`, which hides a bug instead of surfacing it.
+- **``h`...` ``** — a tagged template where the literal parts pass through untouched and
+  **every interpolation is escaped**. This is the form the views use. The direction matters:
+  escaping by default means forgetting a call is impossible, where an `escapeHtml()` you must
+  remember to write is one edit away from an injection. There is deliberately **no** "raw" or
+  "trusted" escape hatch — a view that needs to compose markup nests one `h` inside another.
+- Numbers interpolate as numbers; `null` and `undefined` render as the empty string rather
+  than as the words "null" and "undefined", which is what a nullable `floor` or `endsOn` wants.
+
+`ui/html.test.ts` covers each character, the literal/interpolation split, and the case the
+rule exists for: a person recorded as `<script>alert(1)</script>` renders inert.
+
 ## Decisions
 
 Recorded so they are not relitigated (PIPELINE.md §9, "chat-driven architecture").

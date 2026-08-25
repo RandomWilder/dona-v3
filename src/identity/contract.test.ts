@@ -245,6 +245,117 @@ describe('identity contract', () => {
     });
   });
 
+  it('names a handful of ids in one query, and skips one that is unknown', async (t) => {
+    await withPool(t, async (pool) => {
+      const identity = createIdentity({ pool });
+      const made = [];
+      for (const displayName of ['דנה', 'יוסי', 'רותי']) {
+        made.push(
+          await identity.addPerson(
+            { intentKey: newId(), displayName, kinds: ['tenant'] },
+            actor,
+          ),
+        );
+      }
+      const missing = newId();
+      const found = await identity.getPeople([made[0].id, missing, made[2].id]);
+
+      // A dangling party leaves the others on screen rather than failing the
+      // page — the whole reason a miss is an absence and not an error.
+      assert.equal(found.length, 2);
+      assert.deepEqual(found.map((p) => p.displayName).sort(), ['דנה', 'רותי']);
+      assert.deepEqual(found[0].kinds, ['tenant']);
+    });
+  });
+
+  it('asks nothing of the database for an empty list of ids', async (t) => {
+    await withPool(t, async (pool) => {
+      const identity = createIdentity({ pool });
+      assert.deepEqual(await identity.getPeople([]), []);
+    });
+  });
+
+  it('lists every number that reaches one person, and [] for none', async (t) => {
+    await withPool(t, async (pool) => {
+      const identity = createIdentity({ pool });
+      const person = await identity.addPerson(
+        { intentKey: newId(), displayName: 'דנה', kinds: ['tenant'] },
+        actor,
+      );
+
+      // Someone who exists and holds no number is not an error.
+      assert.deepEqual(await identity.listPhones(person.id), []);
+
+      const first = uniquePhone();
+      const second = uniquePhone();
+      await identity.addPhone(
+        { personId: person.id, phone: first.dashed },
+        actor,
+      );
+      await identity.addPhone(
+        { personId: person.id, phone: second.local },
+        actor,
+      );
+
+      const phones = await identity.listPhones(person.id);
+      // Normalised on the way in, so the list is the stored form, not the typed
+      // one — the inverse of findByPhone.
+      assert.deepEqual(
+        phones.map((p) => p.phone).sort(),
+        [first.national, second.national].sort(),
+      );
+      assert.ok(phones.every((p) => p.personId === person.id));
+    });
+  });
+
+  it("does not hand one person another person's numbers", async (t) => {
+    await withPool(t, async (pool) => {
+      const identity = createIdentity({ pool });
+      const people = [];
+      for (const displayName of ['דנה', 'יוסי']) {
+        people.push(
+          await identity.addPerson(
+            { intentKey: newId(), displayName, kinds: ['tenant'] },
+            actor,
+          ),
+        );
+      }
+      const hers = uniquePhone();
+      const his = uniquePhone();
+      await identity.addPhone(
+        { personId: people[0].id, phone: hers.local },
+        actor,
+      );
+      await identity.addPhone(
+        { personId: people[1].id, phone: his.local },
+        actor,
+      );
+
+      assert.deepEqual(
+        (await identity.listPhones(people[0].id)).map((p) => p.phone),
+        [hers.national],
+      );
+      assert.deepEqual(
+        (await identity.listPhones(people[1].id)).map((p) => p.phone),
+        [his.national],
+      );
+    });
+  });
+
+  it('rejects an id that is not an id, on both new reads', async (t) => {
+    await withPool(t, async (pool) => {
+      const identity = createIdentity({ pool });
+      await assert.rejects(
+        () => identity.listPhones('not-a-uuid'),
+        (error: KernelError) => error.code === 'invalid',
+      );
+      await assert.rejects(
+        () => identity.getPeople([newId(), 'not-a-uuid']),
+        (error: KernelError) => error.code === 'invalid',
+      );
+    });
+  });
+
   it('audits both the command and its refusal', async (t) => {
     await withPool(t, async (pool) => {
       const identity = createIdentity({ pool });

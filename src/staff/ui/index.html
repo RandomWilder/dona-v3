@@ -43,6 +43,7 @@
         color: var(--color-on-chrome);
         font: inherit;
         text-align: start;
+        text-decoration: none; /* the nav items are links as of slice 10.1 */
         cursor: pointer;
       }
       .nav-item[aria-current="page"] {
@@ -90,6 +91,123 @@
         border: var(--size-hairline) solid var(--color-divider-soft);
         border-radius: var(--radius-3);
         padding: var(--space-5);
+      }
+      /* Slice 10.1 content: tables, forms, and the crumb trail. */
+      .crumbs {
+        margin: 0 0 var(--space-3);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .crumbs a {
+        color: var(--color-accent-ink);
+      }
+      .rows {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-body);
+      }
+      .rows caption {
+        text-align: start;
+        padding-block-end: var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      .rows th,
+      .rows td {
+        text-align: start;
+        padding: var(--space-3);
+        border-block-end: var(--size-hairline) solid var(--color-divider-soft);
+      }
+      .rows th {
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+        font-weight: 500;
+      }
+      .rows tbody tr:last-child td {
+        border-block-end: 0;
+      }
+      .rows a {
+        color: var(--color-accent-ink);
+      }
+      .muted {
+        color: var(--color-text-muted);
+      }
+      .tag {
+        display: inline-block;
+        margin-inline-end: var(--space-1);
+        padding: var(--space-chip-y) var(--space-2);
+        border-radius: var(--radius-pill);
+        background: var(--color-accent-tint);
+        color: var(--color-accent-deep);
+        font-size: var(--text-xs);
+      }
+      .stack {
+        display: grid;
+        gap: var(--space-5);
+      }
+      .form-grid {
+        display: grid;
+        gap: var(--space-3);
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      }
+      .field {
+        display: grid;
+        gap: var(--space-1);
+      }
+      .field label {
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .field input {
+        min-height: var(--size-control-ops);
+        padding-inline: var(--space-3);
+        border: var(--size-hairline) solid var(--color-field-line);
+        border-radius: var(--radius-2);
+        background: var(--color-surface);
+        color: var(--color-text);
+        font: inherit;
+      }
+      .field input:focus-visible {
+        outline: var(--size-focus) solid var(--color-accent);
+        outline-offset: var(--size-hairline);
+      }
+      .submit {
+        min-height: var(--size-control-ops);
+        padding-inline: var(--space-5);
+        border: 0;
+        border-radius: var(--radius-2);
+        background: var(--color-accent);
+        color: var(--color-on-accent);
+        font: inherit;
+        cursor: pointer;
+        justify-self: start;
+      }
+      .form-error {
+        margin: 0 0 var(--space-3);
+        padding: var(--space-3);
+        border-radius: var(--radius-2);
+        background: var(--color-accent-tint);
+        color: var(--color-alert);
+        font-size: var(--text-sm);
+      }
+      .card h2 {
+        margin: 0 0 var(--space-4);
+        font-size: var(--text-lg);
+        font-weight: 500;
+      }
+      @media (max-width: 479px) {
+        .field input,
+        .submit {
+          min-height: var(--size-touch);
+        }
+        .rows th,
+        .rows td {
+          padding: var(--space-2);
+        }
       }
       .shell-note {
         margin: var(--space-5) 0 0;
@@ -171,49 +289,49 @@
       <aside class="ops-nav" id="ops-nav">
         <p class="ops-brand">דונה דום</p>
         <nav aria-label="יעדי דלפק">
-          <button type="button" class="nav-item" data-dest="queue" title="תור" aria-current="page">
+          <a class="nav-item" href="/admin" data-dest="queue" title="תור">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             <span class="nav-label">תור</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="conversations" title="שיחות">
+          </a>
+          <a class="nav-item" href="/admin/conversations" data-dest="conversations" title="שיחות">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M8 9h8" /><path d="M8 13h5" />
               <path d="M3 20V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7z" />
             </svg>
             <span class="nav-label">שיחות</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="approvals" title="אישורים">
+          </a>
+          <a class="nav-item" href="/admin/approvals" data-dest="approvals" title="אישורים">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="m9 12 2 2 4-4" /><circle cx="12" cy="12" r="9" />
             </svg>
             <span class="nav-label">אישורים</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="reports" title="דוחות">
+          </a>
+          <a class="nav-item" href="/admin/reports" data-dest="reports" title="דוחות">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 21h18" /><path d="M7 21V10" /><path d="M12 21V4" /><path d="M17 21v-7" />
             </svg>
             <span class="nav-label">דוחות</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="properties" title="נכסים">
+          </a>
+          <a class="nav-item" href="/admin/properties" data-dest="properties" title="נכסים">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18" /><path d="M6 12h12" /><path d="M6 16h12" /><path d="M10 6h.01" /><path d="M14 6h.01" />
             </svg>
             <span class="nav-label">נכסים</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="people" title="אנשים">
+          </a>
+          <a class="nav-item" href="/admin/people" data-dest="people" title="אנשים">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
             <span class="nav-label">אנשים</span>
-          </button>
-          <button type="button" class="nav-item" data-dest="guidance" title="הנחיות">
+          </a>
+          <a class="nav-item" href="/admin/guidance" data-dest="guidance" title="הנחיות">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
             <span class="nav-label">הנחיות</span>
-          </button>
+          </a>
         </nav>
         <div class="ops-footer">
           <form method="post" action="/admin/logout">
@@ -224,61 +342,21 @@
               <span class="nav-label">יציאה</span>
             </button>
           </form>
-          <p class="ops-footer-note">שלד בלבד. היעדים נפתחים לפי סדר בניית המערכת.</p>
+          <p class="ops-footer-note">נכסים ואנשים פעילים. שאר היעדים נפתחים לפי סדר בניית המערכת.</p>
         </div>
       </aside>
 
       <main class="ops-main">
-        <section class="panel" data-panel="queue">
-          <h1>תור</h1>
-          <div class="card"><p class="empty-state">התור עוד לא נפתח. פניות דיירים ייכנסו לכאן עם מודול הפניות, בשבוע 5.</p></div>
-          <p class="shell-note">היעד קיים כדי שהניווט לא ישתנה כשהתוכן ייכנס.</p>
-        </section>
-        <section class="panel" data-panel="conversations" hidden>
-          <h1>שיחות</h1>
-          <div class="card"><p class="empty-state">תמלילי שיחות עם דונה, עם המקורות שצוטטו בכל תשובה, מגיעים בשבוע 4.</p></div>
-        </section>
-        <section class="panel" data-panel="approvals" hidden>
-          <h1>אישורים</h1>
-          <div class="card"><p class="empty-state">אישור טיוטות של דונה לפני שליחה — שבוע 7.</p></div>
-        </section>
-        <section class="panel" data-panel="reports" hidden>
-          <h1>דוחות</h1>
-          <div class="card"><p class="empty-state">דוחות תפעול — שבוע 7.</p></div>
-        </section>
-        <section class="panel" data-panel="properties" hidden>
-          <h1>נכסים</h1>
-          <div class="card"><p class="empty-state">בניינים, דירות ונכסים נטענים בשבוע 2.</p></div>
-        </section>
-        <section class="panel" data-panel="people" hidden>
-          <h1>אנשים</h1>
-          <div class="card"><p class="empty-state">דיירים, ספקים וצוות — שבוע 2.</p></div>
-        </section>
-        <section class="panel" data-panel="guidance" hidden>
-          <h1>הנחיות</h1>
-          <div class="card"><p class="empty-state">סוגי עבודות, כללי השתתפות עצמית ומדריכי עשה-זאת-בעצמך — שבוע 5.</p></div>
-        </section>
+        <!--main-->
       </main>
     </div>
 
     <script>
+      // The drawer is all that is left of 5.1's script: panels became URLs in
+      // slice 10.1, and the server renders which one is current. Nothing on
+      // these pages depends on JavaScript to show its content.
       const ops = document.getElementById('ops');
       const navToggle = document.getElementById('nav-toggle');
-      const items = document.querySelectorAll('.nav-item');
-      const panels = document.querySelectorAll('.panel');
-
-      for (const item of items) {
-        item.addEventListener('click', () => {
-          for (const other of items) other.removeAttribute('aria-current');
-          item.setAttribute('aria-current', 'page');
-          for (const panel of panels) {
-            panel.hidden = panel.dataset.panel !== item.dataset.dest;
-          }
-          ops.classList.remove('is-nav-open');
-          navToggle.setAttribute('aria-expanded', 'false');
-        });
-      }
-
       navToggle.addEventListener('click', () => {
         const open = ops.classList.toggle('is-nav-open');
         navToggle.setAttribute('aria-expanded', String(open));

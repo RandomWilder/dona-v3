@@ -57,6 +57,11 @@ export interface Identity {
   addPerson(input: AddPersonInput, actor: Actor): Promise<Person>;
   addPhone(input: AddPhoneInput, actor: Actor): Promise<PhoneLink>;
   findByPhone(phone: string): Promise<Person | null>;
+  // Slice 10.1. `occupancy` returns a tenancy's parties as ids and no names —
+  // correctly, since a name is this module's fact and not the join's — so the
+  // admin unit view needs something to turn a handful of ids into people.
+  getPeople(ids: string[]): Promise<Person[]>;
+  listPhones(personId: string): Promise<PhoneLink[]>;
 }
 
 export interface IdentityDeps {
@@ -213,13 +218,58 @@ export function createIdentity(deps: IdentityDeps): Identity {
       if (!row) {
         return null;
       }
-      return {
-        id: row.id,
-        displayName: row.display_name,
-        language: row.language,
-        kinds: row.kinds,
-      };
+      return toPerson(row);
     },
+
+    async getPeople(ids) {
+      // Batch, because the caller's shape is a list: a unit with a tenant, a
+      // co-tenant and a guarantor is one query rather than three.
+      if (ids.length === 0) {
+        return [];
+      }
+      const wanted = ids.map((id, index) => validId(id, `ids[${index}]`));
+      const found = await pool.query<PersonRow>(
+        `SELECT p.id, p.display_name, p.language,
+                coalesce(
+                  array_agg(k.kind ORDER BY k.kind) FILTER (WHERE k.kind IS NOT NULL),
+                  '{}'
+                ) AS kinds
+           FROM identity_people p
+           LEFT JOIN identity_person_kinds k ON k.person_id = p.id
+          WHERE p.id = ANY($1::uuid[])
+          GROUP BY p.id, p.display_name, p.language`,
+        [wanted],
+      );
+      // An unknown id is absent from the result rather than an error: the caller
+      // is rendering a page, and one dangling party should leave the other two
+      // on screen. Order is not promised — callers index by id.
+      return found.rows.map(toPerson);
+    },
+
+    async listPhones(personId) {
+      const id = validId(personId, 'personId');
+      // No not_found on a miss, though this takes a system id: a person with no
+      // numbers is a true `[]` about someone who exists.
+      const found = await pool.query<{ person_id: string; phone: string }>(
+        `SELECT person_id, phone FROM identity_phones
+          WHERE person_id = $1
+          ORDER BY created_at, phone`,
+        [id],
+      );
+      return found.rows.map((row) => ({
+        personId: row.person_id,
+        phone: row.phone,
+      }));
+    },
+  };
+}
+
+function toPerson(row: PersonRow): Person {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    language: row.language,
+    kinds: row.kinds,
   };
 }
 

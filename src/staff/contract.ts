@@ -6,6 +6,12 @@ import {
   type StaffCommands,
 } from './internal/commands.ts';
 import {
+  createStaffQueries,
+  type PersonDetail,
+  type StaffQueries,
+  type UnitDetail,
+} from './internal/queries.ts';
+import {
   type SeedEnv,
   type SeedResult,
   seedStaffOperator,
@@ -21,8 +27,16 @@ export { capabilities, permits, staffRoles } from './internal/roles.ts';
 // this file — internals live under `internal/`.
 export type { StaffDeps } from './ui/routes.ts';
 export { registerStaffUi } from './ui/routes.ts';
-export type { SeedEnv, SeedResult, StaffCommandDeps, StaffCommands };
-export { createStaffCommands };
+export type {
+  PersonDetail,
+  SeedEnv,
+  SeedResult,
+  StaffCommandDeps,
+  StaffCommands,
+  StaffQueries,
+  UnitDetail,
+};
+export { createStaffCommands, createStaffQueries };
 
 export function seedStaff(pool: Pool, env: SeedEnv): Promise<SeedResult> {
   return seedStaffOperator(createStaffAuth(pool), env);
