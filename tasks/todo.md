@@ -146,6 +146,10 @@ Also here: `normalizePhone` promoted onto `identity`'s contract and `validDate` 
 
 **One unexplained test failure, recorded rather than smoothed over.** In the gate run immediately after the last `index.html` edit, one test failed; its identity was not captured and it has not recurred in **17 consecutive full runs**. The carried-in `staff` session-sweep flake below is the obvious suspect — documented as roughly one run in five — but that is a guess and is written as one.
 
+**Deployed 2026-08-25.** Merged as [#14](https://github.com/RandomWilder/dona-v3/pull/14) (`8b0fd27`), CI green, Deploy carried it to staging ([run](https://github.com/RandomWilder/dona-v3/actions/runs/32816208149)). Confirmed on the deployed URL, not from the workflow's exit code: staging `/health` reports `{"ok":true,"version":"8b0fd27","db":"up"}`. All six new routes answer **302 → `/admin/login`** unauthenticated — the gate reaches the new views, which is the half of this that can be proved without credentials.
+
+**The Verify bar is not closed, and it is Asaf's to close.** It reads *"phone screenshot of the pilot building on staging"*, which needs a logged-in session. Staging holds **real leases** as of 7.0, so it is not an environment to mint a throwaway operator in — the local preview was run against the local database precisely for that reason. What remains is one login and one screenshot. Two things worth knowing before it: the building on staging is the **seeded** one until fuse 3's table arrives, and `נכסים` will show every building the staging database holds, test residue included.
+
 > Open for 10.2, unchanged by this slice: **the viewer account still cannot be created by the system** — the seeder creates but never updates, and `administer` still has no command behind it. Also new and deliberate: the read guard has **no failing role**, since all three hold `read`; it exists so a fourth role cannot silently open the views, and `internal/queries.test.ts` pins the grid so that stays visible rather than reading as coverage.
 
 ### Slice 10.2 — Week 2 checkpoint ☐
