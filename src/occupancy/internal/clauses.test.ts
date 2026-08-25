@@ -199,4 +199,46 @@ describe('clause chunking', () => {
     assert.deepEqual(chunks, []);
     assert.deepEqual(imageOnlyPages, [1, 2]);
   });
+  it('reads the annex form, where a clause names its number in words', () => {
+    // נספח א׳ is a table of commercial terms keyed by the body clause each row
+    // qualifies, so it writes `סעיף 5 – …` rather than leading with the number.
+    // Measured on the real lease: without this the whole annex -- the term, the
+    // rent, the maintenance fee, the securities -- came out as one chunk split
+    // by length and cited as `נספח א׳ (1/2)`, which names two pages and not a
+    // clause. That is the reference 13.1 would have had to build the twin on.
+    const { chunks } = chunkLease([
+      page(14, [
+        line(40, 'נספח א׳ להסכם השכירות - תוספת תנאים מסחריים'),
+        line(70, 'סעיף 3.2 – פגם, מום או ליקוי במושכר.'),
+        line(100, 'סעיף 5 – תקופת השכירות שתחילתה ביום 15/08/2025.'),
+        line(130, 'סעיף 10 - דמי השכירות החודשיים יעמדו על סך של 5,840 ש"ח.'),
+      ]),
+    ]);
+    assert.deepEqual(
+      chunks.map((chunk) => chunk.clauseRef),
+      ['נספח א׳', 'נספח א׳ §3.2', 'נספח א׳ §5', 'נספח א׳ §10'],
+    );
+    // Each fact now sits in the clause that states it, which is what makes it
+    // citable rather than merely present.
+    assert.match(
+      chunks.find((chunk) => chunk.clauseRef === 'נספח א׳ §10')?.text ?? '',
+      /5,840/,
+    );
+  });
+
+  it('does not take a mid-sentence reference for a clause start', () => {
+    const { chunks } = chunkLease([
+      page(3, [
+        line(60, '4. השוכר יפעל כאמור להלן.'),
+        line(80, 'הכל בכפוף לאמור בסעיף 12 להסכם זה.'),
+      ]),
+    ]);
+    // One clause, not two: `סעיף` inside a sentence is a cross-reference, and
+    // splitting there would cite the wrong clause for the text that follows.
+    assert.deepEqual(
+      chunks.map((chunk) => chunk.clauseRef),
+      ['§4'],
+    );
+    assert.match(chunks[0]?.text ?? '', /בסעיף 12/);
+  });
 });

@@ -55,6 +55,21 @@ const annexHeading = /^נספח\s+([א-ת]{1,2}["'׳״]?[א-ת]?)/;
 // optional because typesetting varies between the body and the annexes.
 const clauseNumber = /^(\d+(?:\.\d+)*)[.)]?(?:\s|$)/;
 
+// The other way a clause announces itself, and the one the annexes use:
+// `סעיף 5 – תקופת השכירות`. נספח א׳ is a table of commercial terms keyed by the
+// body clause each row qualifies, so it names the number in words rather than
+// leading with it.
+//
+// Measured on the real lease: without this, נספח א׳ -- the annex the digital
+// twin reads, holding the term structure, the rent, the maintenance fee and the
+// securities -- came out as one chunk split by length and cited as
+// `נספח א׳ (1/2)`, a reference naming two pages rather than a clause.
+//
+// Anchored, and a number is required after the word: `סעיף` appears mid-sentence
+// throughout a lease ("כאמור בסעיף 12"), and only a line that opens with it is a
+// heading.
+const clauseWord = /^סעיף\s+(\d+(?:\.\d+)*)\s*[–—\-:.]?/;
+
 const hebrew = /[א-ת]/;
 
 interface Line {
@@ -248,7 +263,8 @@ function gather(lines: Line[]): Draft[] {
       );
       continue;
     }
-    const numberMatch = clauseNumber.exec(line.text);
+    const numberMatch =
+      clauseNumber.exec(line.text) ?? clauseWord.exec(line.text);
     if (numberMatch) {
       start(
         {

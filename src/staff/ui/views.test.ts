@@ -203,6 +203,28 @@ describe('admin views', () => {
     ).value;
     assert.ok(page.includes('ללא מספור'));
   });
+  it('names the pages that carried no text layer, rather than counting them', () => {
+    // OCR is week 3's cut line. A lease four pages short must say which four:
+    // an operator reading an answer out of it is entitled to know the answer
+    // came from an incomplete document.
+    const detail = chunkDetail('§1');
+    const page = chunksPage(
+      {
+        ...detail,
+        document: { ...detail.document, imageOnlyPages: [2, 17, 33, 38] },
+      },
+      context('admin'),
+    ).value;
+    assert.ok(page.includes('ללא שכבת טקסט'));
+    assert.ok(page.includes('2, 17, 33, 38'));
+    assert.ok(page.includes('הזנה ידנית'));
+  });
+
+  it('says so plainly when every page carried text', () => {
+    const page = chunksPage(chunkDetail('§1'), context('admin')).value;
+    assert.ok(page.includes('בכל העמודים נמצא טקסט'));
+    assert.ok(page.includes('38'));
+  });
 });
 
 // One document's chunks, for the chunks page.
@@ -221,6 +243,9 @@ function chunkDetail(clauseRef: string): DocumentChunks {
       contentType: 'application/pdf',
       byteSize: 1024,
       createdAt: '2026-08-25T09:00:00.000Z',
+      ingestedAt: '2026-08-25T10:00:00.000Z',
+      pageCount: 38,
+      imageOnlyPages: [],
     },
     chunks: [
       {

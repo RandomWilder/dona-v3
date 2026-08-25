@@ -285,6 +285,9 @@ describe('lease chunks at the edge', () => {
         { x: 380, y: 700, text: '24 months' },
       ],
       [{ x: 120, y: 760, text: '2. Rent is payable monthly in advance.' }],
+      // A page with no runs: content, carrying no text layer -- what a scan or
+      // a floor plan looks like to the reader.
+      [],
     ]);
 
   async function uploaded(
@@ -366,6 +369,10 @@ describe('lease chunks at the edge', () => {
         headers: { cookie },
       });
       assert.equal(page.statusCode, 200);
+      // The reading state survives the redirect that discarded it in this
+      // slice's first cut: the screen reads it off the document row.
+      assert.ok(page.body.includes('ללא שכבת טקסט'));
+      assert.ok(page.body.includes('3'));
       assert.ok(page.body.includes('§1'));
       assert.ok(page.body.includes('unfurnished'));
       // The two-column row is bound to its label on the way through, which is

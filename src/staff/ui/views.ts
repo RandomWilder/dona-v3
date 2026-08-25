@@ -2,6 +2,7 @@ import type { Person } from '../../identity/contract.ts';
 import { type Html, h } from '../../kernel/ui/html.ts';
 import type {
   DocumentKind,
+  DocumentRecord,
   OccupancyResolution,
 } from '../../occupancy/contract.ts';
 import type {
@@ -196,26 +197,27 @@ function fileSize(bytes: number): Html {
 }
 
 // "Not read yet" and "read, and produced nothing" are different facts, and a
-// count alone cannot tell them apart -- so an un-ingested document says so and
-// offers the button, and an ingested one links to what came out of it.
+// chunk count alone cannot tell them apart -- so the state comes from
+// `ingestedAt` and the number beside it from the count.
 function clauseCell(
   unitId: string,
-  documentId: string,
+  document: DocumentRecord,
   count: number | undefined,
   context: PageContext,
 ): Html {
-  const url = `/admin/units/${unitId}/documents/${documentId}/chunks`;
+  const url = `/admin/units/${unitId}/documents/${document.id}/chunks`;
+  const read = document.ingestedAt !== null;
   const ingest = permits(context.role, 'mutate')
     ? h`<form method="post"
-              action="/admin/units/${unitId}/documents/${documentId}/ingest"
+              action="/admin/units/${unitId}/documents/${document.id}/ingest"
               class="inline">
-              <button type="submit" class="linkish">${count === undefined ? 'קריאת סעיפים' : 'קריאה מחדש'}</button>
+              <button type="submit" class="linkish">${read ? 'קריאה מחדש' : 'קריאת סעיפים'}</button>
             </form>`
     : h``;
-  if (count === undefined) {
+  if (!read) {
     return h`<span class="muted">טרם נקרא</span> ${ingest}`;
   }
-  return h`<a href="${url}">${ltr(String(count))} סעיפים</a> ${ingest}`;
+  return h`<a href="${url}">${ltr(String(count ?? 0))} סעיפים</a> ${ingest}`;
 }
 
 // The documents on a tenancy, and — for a role that may write — the form that
@@ -234,7 +236,7 @@ function documentsCard(detail: UnitDetail, context: PageContext): Html {
                 <td><a href="/admin/documents/${document.id}">${documentKindNames[document.kind] ?? document.kind}</a></td>
                 <td>${date(document.createdAt.slice(0, 10))}</td>
                 <td>${fileSize(document.byteSize)}</td>
-                <td>${clauseCell(unitId, document.id, detail.chunkCounts[document.id], context)}</td>
+                <td>${clauseCell(unitId, document, detail.chunkCounts[document.id], context)}</td>
               </tr>`,
             )}</tbody>
           </table>`
@@ -378,9 +380,31 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
             ${address(building)} · דירה ${unit.label} ·
             <a href="/admin/documents/${detail.document.id}">המסמך המקורי</a>
           </p>
+          ${readingNote(detail.document)}
           ${errorNote(context)}
           ${body}
         </section>`;
+}
+
+// What the reader could and could not see. The pages with no text layer are
+// named rather than counted: OCR is week 3's cut line, and a lease four pages
+// short must be able to say which four -- an operator reading an answer out of
+// it is entitled to know the answer came from an incomplete document.
+function readingNote(document: DocumentRecord): Html {
+  if (document.ingestedAt === null) {
+    return h``;
+  }
+  const missing = document.imageOnlyPages;
+  return h`<p class="muted">
+          נקרא ${date(document.ingestedAt.slice(0, 10))}
+          ${document.pageCount === null ? h`` : h`· ${ltr(String(document.pageCount))} עמודים`}
+          ${
+            missing.length > 0
+              ? h`· <strong>ללא שכבת טקסט:</strong> ${ltr(missing.join(', '))}
+                  <span class="muted">(דורש הזנה ידנית)</span>`
+              : h`· בכל העמודים נמצא טקסט`
+          }
+        </p>`;
 }
 
 // `נספח א׳ §3.1–3.3` is Hebrew followed by a number range, and inside an RTL

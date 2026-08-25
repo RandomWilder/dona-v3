@@ -265,9 +265,17 @@ Clause reference, pages, and the text — in reading order, one card per chunk. 
 verification surface first: the slice's acceptance bar is that a human can spot-read chunks
 against the PDF, and this is where that is done. It is deliberately plain.
 
-It also shows **the pages that carried no text layer**, named. That is the honest half of
-week 3's OCR cut line: a lease with four image-only pages is four pages incomplete, and an
-operator reading an answer from it should be able to know that.
+It also shows **the pages that carried no text layer**, named, and when the document was last
+read. That is the honest half of week 3's OCR cut line: a lease with four image-only pages is
+four pages incomplete, and an operator reading an answer from it should be able to know that.
+
+Those facts are read from the document row rather than from the ingest response. The first cut
+of this slice took them from the response, which the redirect discarded — the screen could
+state them for the length of one request and never again.
+
+The unit page's read/unread state comes from `ingested_at` for the same reason. "Has chunks"
+is a different question: a document that was read and produced nothing would otherwise be
+indistinguishable from one nobody has opened.
 
 ## The views (slice 10.1)
 
