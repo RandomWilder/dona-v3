@@ -46,6 +46,22 @@ export interface LeaseChunking {
 export const maxChunkChars = 1500;
 export const minChunkChars = 200;
 
+// Below this much readable text, a page is an image with a page number printed
+// on it -- not a page of text.
+//
+// Measured on the real lease, and this number exists because the first cut of
+// 12.1 got it wrong. Flagging only pages that yield *zero* text items reported
+// "בכל העמודים נמצא טקסט" for a document the reference note measured as having
+// four image-only pages: the floor plan and the spec cover each carry a running
+// footer, so each yielded one item and passed for a page of prose. A false
+// all-clear on an incomplete document is worse than saying nothing, because the
+// operator reading an answer out of it has been told there is nothing missing.
+//
+// A page under the bar is also dropped rather than chunked, which takes the
+// footer with it: `- 15 -` appended to the end of the previous clause is a page
+// number pretending to be part of a contract.
+export const minPageChars = 40;
+
 // `נספח א׳`, `נספח י״ב` -- one or two Hebrew letters with a geresh or
 // gershayim. Anchored: the word appears inside sentences too ("as set out in
 // נספח ב׳"), and only a line that *begins* with it is a heading.
@@ -81,11 +97,14 @@ export function chunkLease(pages: PdfPage[]): LeaseChunking {
   const imageOnlyPages: number[] = [];
   const lines: Line[] = [];
   for (const page of pages) {
-    if (page.items.length === 0) {
+    const read = page.items.length === 0 ? [] : pageLines(page);
+    // Whitespace does not count: a page of blank runs is as unreadable as a
+    // page of none.
+    if (read.join('').replace(/\s/g, '').length < minPageChars) {
       imageOnlyPages.push(page.number);
       continue;
     }
-    for (const text of pageLines(page)) {
+    for (const text of read) {
       lines.push({ page: page.number, text });
     }
   }

@@ -274,17 +274,26 @@ describe('lease documents at the edge', () => {
 // one -- `samplePdf` writes a PDF that pdfjs opens -- so this is the only test
 // that runs upload, extraction, chunking and the screen in one pass.
 describe('lease chunks at the edge', () => {
+  const filler =
+    'The parties confirm they have read this agreement and understood it.';
+
   const lease = () =>
     samplePdf([
       [
         { x: 120, y: 760, text: '1. The flat is let unfurnished.' },
+        // Enough text for the page to be a page: below `minPageChars` of
+        // readable text the chunker reads a page as an image with a footer.
+        { x: 120, y: 730, text: filler },
         // The two-column annex row, mirrored: this fixture is Latin and so
         // reads left to right, which puts the label on the left where the
         // Hebrew document puts it on the right. Same row, same pairing.
         { x: 120, y: 700, text: 'Term' },
         { x: 380, y: 700, text: '24 months' },
       ],
-      [{ x: 120, y: 760, text: '2. Rent is payable monthly in advance.' }],
+      [
+        { x: 120, y: 760, text: '2. Rent is payable monthly in advance.' },
+        { x: 120, y: 730, text: filler },
+      ],
       // A page with no runs: content, carrying no text layer -- what a scan or
       // a floor plan looks like to the reader.
       [],
