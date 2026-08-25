@@ -49,11 +49,14 @@ Previous week: `tasks/week-2.md` (closed — the pilot building is browsable, ro
 **Done when:** `נכסים` on staging shows exactly the template's three buildings, and a phone
 lookup returns the person the CSV says it should.
 **Verify:** browse staging; five `resolveByPhone` spot-checks against the CSV. · Size: M
-**Closed 2026-08-25 — one half owed.** Staging reads `buildings 3 · units 10 · people 13 ·
+**Closed 2026-08-25 — both halves.** Staging reads `buildings 3 · units 10 · people 13 ·
 tenancies 10`, and **seven** spot-checks resolve to the person the CSV names, including one
-person reaching two tenancies with different access from a spelling not in the file. Evidence:
-`tasks/evidence/day-11-staging-reset.md`. **The browse is the owner's** — it needs the admin
-password, which was never shared, the same reason the week-2 demo was run by Asaf.
+person reaching two tenancies with different access from a spelling not in the file. The
+browse was run by the owner, as the week-2 demo was: `נכסים` shows exactly גני אלון (הנשיא 8,
+חיפה) · בית שקד (ביאליק 12א, רמת גן) · מעונות הדר (ארלוזורוב 45, תל אביב), and בית שקד opens on
+its three flats 2 / 5 / 8 at floors 1 / 2 / 4 — the CSV, to the row. Merged as
+[#16](https://github.com/RandomWilder/dona-v3/pull/16); staging serves `1f01462`. Evidence:
+`tasks/evidence/day-11-staging-reset.md`.
 
 ### Slice 11.2 — Lease upload → GCS, attached to an occupancy ☐
 > **Working document:** the real signed lease already in the buckets. Asaf's call on

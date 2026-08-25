@@ -106,13 +106,26 @@ REQUIRE_POSTGRES=1 npm test -> 287 pass, 0 fail, 0 skipped   (283 -> 287)
 npm run evals       -> 3/3
 ```
 
-## What is not proved here
+## The browse, run by the owner
 
-**The browse half of the bar.** `נכסים` showing exactly three buildings needs
-the admin password, which is Asaf's and was never shared — the same reason the
-week-2 demo was run by the owner. `/admin/properties` on staging answers `302 ->
-/admin/login`, and `/health` reads `{"ok":true,"version":"0f02251","db":"up"}`.
-The screen itself is the owner's to confirm.
+Confirmed after the merge, on staging serving `1f01462`. Not self-certified, and
+it could not have been: it needs the admin password, which is Asaf's and was
+deliberately never shared — the same constraint as the week-2 demo.
+
+`נכסים` reads **3 בניינים**, and they are the template's:
+
+| on screen | address | CSV |
+|---|---|---|
+| גני אלון | הנשיא 8, חיפה | ✓ |
+| בית שקד | ביאליק 12א, רמת גן | ✓ |
+| מעונות הדר | ארלוזורוב 45, תל אביב | ✓ |
+
+Nothing else is listed — the residue question answered on the screen rather than
+in a count. Opening בית שקד gives **3 דירות**: flats 2, 5 and 8 on floors 1, 2
+and 4, exactly what the CSV holds for that address — including `12א` surviving
+as a house number that is text rather than a number.
+
+## What is still not proved here
 
 **The truncate is not covered by a test that executes it.** `node --test` runs
 files in parallel against one database, so a test that emptied `identity_people`
