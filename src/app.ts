@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { registerChannelUi } from './channel/contract.ts';
 import type { Clock } from './kernel/clock.ts';
 import { httpStatus, KernelError, toErrorBody } from './kernel/errors.ts';
+import type { ObjectStore } from './kernel/objects.ts';
 import { registerUiAssets } from './kernel/ui/assets.ts';
 import { registerStaffUi } from './staff/contract.ts';
 
@@ -10,6 +11,9 @@ export interface AppDeps {
   pool: Pool;
   version: string;
   clock?: Clock;
+  // Where lease documents live. Wired at boot; absent in tests that never touch
+  // one, where occupancy falls back to a store that throws rather than forgets.
+  store?: ObjectStore;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -59,7 +63,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Presentation: the shared token layer, then one shell per module edge.
   // Modules are reached through their contract, never through their internals.
   registerUiAssets(app);
-  registerStaffUi(app, { pool: deps.pool, clock: deps.clock });
+  registerStaffUi(app, {
+    pool: deps.pool,
+    clock: deps.clock,
+    store: deps.store,
+  });
   registerChannelUi(app);
 
   // The bare URL is what someone types on a phone; send it where the system

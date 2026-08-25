@@ -88,8 +88,9 @@ describe('admin views', () => {
       },
       tenancy: null,
       people: [],
+      documents: [],
     };
-    const page = unitPage(detail).value;
+    const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('דוד'));
     assert.ok(!page.includes('boiler'));
   });
@@ -108,8 +109,9 @@ describe('admin views', () => {
       },
       tenancy: null,
       people: [],
+      documents: [],
     };
-    const page = unitPage(detail).value;
+    const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('הדירה פנויה'));
   });
 
@@ -162,8 +164,9 @@ describe('admin views', () => {
         },
       },
       people: [known],
+      documents: [],
     };
-    const page = unitPage(detail).value;
+    const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('דנה כהן'));
     assert.ok(page.includes('ערב'));
     // An open-ended tenancy says so, rather than reading as a gap in the data.

@@ -231,14 +231,20 @@ gcloud storage buckets update "gs://$DOCS_BUCKET" \
   --versioning \
   --project "$PROJECT" >/dev/null
 
-# Read-only, on this bucket alone — never a project-level storage role, so
-# app-staging cannot read prod's documents. The app has no write access because
-# nothing uploads leases yet; objectCreator lands with the week-3 upload slice,
-# when there is something to grant it for.
-gcloud storage buckets add-iam-policy-binding "gs://$DOCS_BUCKET" \
-  --member "serviceAccount:$RUNTIME_EMAIL" \
-  --role roles/storage.objectViewer \
-  --project "$PROJECT" >/dev/null
+# On this bucket alone — never a project-level storage role, so app-staging
+# cannot read prod's documents.
+#
+# objectCreator is the grant slice 7.0 deferred "until the slice that needs it";
+# slice 11.2 is that slice, and the admin lease upload is what needs it. Note
+# what is still *not* granted: objectAdmin, which carries delete. The app can
+# write a new object and read one, and it cannot destroy a signed contract —
+# which matters while there is no retention rule and no deletion path (week 6).
+for role in roles/storage.objectViewer roles/storage.objectCreator; do
+  gcloud storage buckets add-iam-policy-binding "gs://$DOCS_BUCKET" \
+    --member "serviceAccount:$RUNTIME_EMAIL" \
+    --role "$role" \
+    --project "$PROJECT" >/dev/null
+done
 
 say "Workload Identity Federation (no long-lived keys)"
 gcloud iam workload-identity-pools describe "$POOL" \

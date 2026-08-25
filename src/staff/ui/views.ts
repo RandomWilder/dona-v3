@@ -1,6 +1,9 @@
 import type { Person } from '../../identity/contract.ts';
 import { type Html, h } from '../../kernel/ui/html.ts';
-import type { OccupancyResolution } from '../../occupancy/contract.ts';
+import type {
+  DocumentKind,
+  OccupancyResolution,
+} from '../../occupancy/contract.ts';
 import type {
   AssetKind,
   Building,
@@ -175,7 +178,73 @@ const roleNames: Record<string, string> = {
 
 // No create form on this page and so no context: a unit page is read-only in
 // 10.1 for every role.
-export function unitPage(detail: UnitDetail): Html {
+const documentKindNames: Record<DocumentKind, string> = {
+  lease: 'חוזה שכירות',
+  appendix: 'נספח',
+  guarantee: 'ערבות',
+  other: 'מסמך',
+};
+
+// Sizes read left to right inside a right-to-left page, like dates and ids.
+function fileSize(bytes: number): Html {
+  const mb = bytes / (1024 * 1024);
+  return ltr(mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
+}
+
+// The documents on a tenancy, and — for a role that may write — the form that
+// adds one. A vacant flat gets neither: a document hangs off a tenancy, and
+// there is none to hang it on.
+function documentsCard(detail: UnitDetail, context: PageContext): Html {
+  if (!detail.tenancy) {
+    return h``;
+  }
+  const listed = detail.documents.length
+    ? h`<table class="rows">
+            <thead><tr><th>מסמך</th><th>נוסף</th><th>גודל</th></tr></thead>
+            <tbody>${detail.documents.map(
+              (document) => h`<tr>
+                <td><a href="/admin/documents/${document.id}">${documentKindNames[document.kind] ?? document.kind}</a></td>
+                <td>${date(document.createdAt.slice(0, 10))}</td>
+                <td>${fileSize(document.byteSize)}</td>
+              </tr>`,
+            )}</tbody>
+          </table>`
+    : h`<p class="empty-state">אין עדיין מסמכים לתקופת השכירות הזו.</p>`;
+
+  // The tenancy is not in this form. It is resolved from the unit on the
+  // server, because a hidden field is a caller-supplied id and the caller is a
+  // browser — see SPEC-staff.md, "The tenancy is resolved on the server".
+  const upload = permits(context.role, 'mutate')
+    ? h`<form method="post" action="/admin/units/${detail.unit.unit.id}/documents"
+              enctype="multipart/form-data" class="stack">
+              ${errorNote(context)}
+              <div class="form-grid">
+                <p class="field">
+                  <label for="f-kind">סוג</label>
+                  <select id="f-kind" name="kind">${Object.entries(
+                    documentKindNames,
+                  ).map(
+                    ([value, label]) =>
+                      h`<option value="${value}">${label}</option>`,
+                  )}</select>
+                </p>
+                <p class="field">
+                  <label for="f-file">קובץ PDF</label>
+                  <input id="f-file" name="file" type="file" accept="application/pdf" required />
+                </p>
+              </div>
+              <button type="submit" class="submit">העלאה</button>
+            </form>`
+    : h``;
+
+  return h`<div class="card">
+          <h2>מסמכים</h2>
+          ${listed}
+          ${upload}
+        </div>`;
+}
+
+export function unitPage(detail: UnitDetail, context: PageContext): Html {
   const { unit, building } = detail.unit;
   const names = new Map(detail.people.map((person) => [person.id, person]));
 
@@ -237,6 +306,7 @@ export function unitPage(detail: UnitDetail): Html {
             ${term}
             ${occupants}
           </div>
+          ${documentsCard(detail, context)}
           <div class="card">
             <h2>ציוד</h2>
             ${assets}

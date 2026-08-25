@@ -5,6 +5,16 @@
 // must reject a bad date before it writes, and a second copy of the rule would
 // drift from the one the commands enforce.
 export { optionalDate, validDate } from './internal/dates.ts';
+export type {
+  AttachDocumentInput,
+  DocumentKind,
+  DocumentRecord,
+} from './internal/documents.ts';
+export {
+  documentContentType,
+  documentKinds,
+  maxDocumentBytes,
+} from './internal/documents.ts';
 export type { OccupancyRole, TenancyAccess } from './internal/roles.ts';
 export { occupancyRoles, tenancyAccess } from './internal/roles.ts';
 export type {

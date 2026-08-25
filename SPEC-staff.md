@@ -160,8 +160,8 @@ system with no way to administer it.
 `staff` owns no domain tables, and until this slice it owned no commands either — which
 left "a viewer cannot mutate" with nothing to call. It now fronts the mutating commands
 of `identity`, `portfolio` and `occupancy` — `addPerson`, `addPhone`, `addBuilding`,
-`addUnit`, `addAsset`, `openTenancy`, `addParty`, `endTenancy` — each taking `(input,
-session)`. The three modules are injected as their contract types, so the dependency is
+`addUnit`, `addAsset`, `openTenancy`, `addParty`, `endTenancy` and, as of slice 11.2,
+`attachDocument` — each taking `(input, session)`. The three modules are injected as their contract types, so the dependency is
 visible in the constructor rather than buried in a call.
 
 Each command, in this order:
@@ -189,6 +189,42 @@ too, which is what lets the week-2 demo show two sessions apart in the trail.
 No second operator can be created either — the seeder creates but never updates, and there
 is no operator-management screen, so the viewer account for the week-2 demo has to be made
 by hand. That is still true after 10.1.
+
+## Documents on the unit view (slice 11.2)
+
+The upload surface for lease documents. It adds no new access rule and deliberately reuses
+both existing ones: writing is `mutate`, so a viewer is refused by the same guard that
+refuses every other write, and reading is `read` **and audited**, because a lease is
+exactly the record a privacy request means when it asks who opened a tenant's file. That is
+the line 10.1 drew — a list read writes no row, a detail read writes one — and a document
+is the most detailed read in the system.
+
+### The tenancy is resolved on the server
+
+`POST /admin/units/:unitId/documents` posts a file and nothing else. The tenancy it attaches
+to is found by `occupancy.findCurrentTenancy(unitId)` on the server; it is **never a hidden
+field in the form**. A hidden field is a caller-supplied id, and the caller here is a
+browser: accepting one would let a crafted post file a document against a tenancy the
+operator never opened, which is the isolation failure this system is built to make
+impossible rather than unlikely.
+
+A vacant flat therefore refuses with `invalid` rather than inventing a tenancy — the same
+vacancy `findCurrentTenancy` returns `null` for, and the same one the page already renders
+as *"הדירה פנויה"*.
+
+### Multipart, and why it is a dependency
+
+`@fastify/multipart`. The form is plain HTML with `enctype="multipart/form-data"` and no
+JavaScript, which keeps the property the admin shell states about itself: nothing on these
+pages depends on JavaScript. `app.ts` declined `@fastify/formbody` because the urlencoded
+parser it replaces is ten lines; multipart is not ten lines, and it is a security-sensitive
+parse of attacker-shaped input.
+
+### `GET /admin/documents/:documentId`
+
+Serves the bytes back with `content-disposition: inline`, `no-store` and `nosniff`, the same
+headers every authenticated page carries. The document id is the only thing in the URL, and
+it names no person.
 
 ## The views (slice 10.1)
 

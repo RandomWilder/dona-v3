@@ -3,6 +3,7 @@ import { type AuditLog, createAuditLog } from '../../kernel/audit.ts';
 import { systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import type {
+  DocumentRecord,
   OccupancyResolution,
   TenancyView,
 } from '../../occupancy/contract.ts';
@@ -29,6 +30,9 @@ export interface UnitDetail {
   unit: UnitView;
   tenancy: TenancyView | null;
   people: Person[];
+  // Empty for a vacant flat, because documents hang off the tenancy and a
+  // vacancy has none. Metadata only -- the bytes are a second request.
+  documents: DocumentRecord[];
 }
 
 export interface PersonDetail {
@@ -45,6 +49,12 @@ export interface StaffQueries {
     session: Session,
   ): Promise<OccupancyResolution | null>;
   getUnitDetail(unitId: string, session: Session): Promise<UnitDetail>;
+  // Audited like the other detail reads: a lease is exactly the record a
+  // privacy request means when it asks who opened a tenant's file.
+  getDocument(
+    documentId: string,
+    session: Session,
+  ): Promise<{ document: DocumentRecord; bytes: Buffer }>;
   getPersonDetail(personId: string, session: Session): Promise<PersonDetail>;
 }
 
@@ -114,8 +124,16 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
               tenancy.parties.map((p) => p.personId),
             )
           : [];
-        return { unit, tenancy, people };
+        const documents = tenancy
+          ? await deps.occupancy.listDocuments(tenancy.tenancy.id)
+          : [];
+        return { unit, tenancy, people, documents };
       }),
+
+    getDocument: (documentId, session) =>
+      guardAudited('getDocument', documentId, session, () =>
+        deps.occupancy.readDocument(documentId),
+      ),
 
     getPersonDetail: (personId, session) =>
       guardAudited('getPersonDetail', personId, session, async () => {

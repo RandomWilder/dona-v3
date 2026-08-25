@@ -5,6 +5,11 @@ import type { Pool } from 'pg';
 import { buildApp } from './app.ts';
 import { createPool } from './kernel/db.ts';
 import { migrate } from './kernel/migrate.ts';
+import {
+  createGcsStore,
+  createMemoryStore,
+  type ObjectStore,
+} from './kernel/objects.ts';
 import { seedStaff, seedViewer } from './staff/contract.ts';
 
 const packageJsonPath = path.join(
@@ -56,11 +61,24 @@ export async function startServer(options: BootOptions): Promise<string> {
     email: process.env.STAFF_VIEWER_EMAIL,
     password: process.env.STAFF_VIEWER_PASSWORD,
   });
-  const app = buildApp({ pool, version });
+  const store = resolveStore(process.env);
+  const app = buildApp({ pool, version, store });
   await app.listen({ port: options.port, host: options.host });
-  // Both reported, so a deploy that seeded one and not the other says so on the
-  // line an operator actually reads.
-  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason}`;
+  // All three reported, so a deploy that seeded one and not the other — or that
+  // is holding lease documents in memory — says so on the line an operator
+  // actually reads.
+  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason} · docs: ${store.describe()}`;
+}
+
+// Where lease documents go. Absent DOCS_BUCKET is not an error: locally there is
+// no bucket, and a clean clone must still start. It falls back to memory and
+// *says so* on the boot line, which is what makes a deployed revision running on
+// memory as loud as a `-dev` version string.
+export function resolveStore(
+  env: Record<string, string | undefined>,
+): ObjectStore {
+  const bucket = env.DOCS_BUCKET?.trim();
+  return bucket ? createGcsStore({ bucket }) : createMemoryStore();
 }
 
 // First `docker compose up` — and a cold Cloud SQL instance — need a few
