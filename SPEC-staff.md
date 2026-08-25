@@ -27,6 +27,11 @@ on a phone, because that is what Friday's demo opens.
 data; there is no data. Controls follow the ops sizing from `.cursor/rules/ui-tokens.mdc`:
 `--size-control-ops` (36px) on the board, `--size-touch` (44px) below 480px.
 
+> **Superseded in part by slice 10.1**, below: `נכסים` and `אנשים` now render real rows, the
+> shell is server-rendered, and each destination has its own URL. The chrome, the seven
+> destinations, the three widths and the control sizing are unchanged — which was the point of
+> fixing them in 5.1.
+
 **No auth yet.** `/admin` is open on staging until slice 5.2 puts a session in front of it. It
 exposes nothing — no data, no commands — so the gap is a missing gate, not a leak. 5.2 closes it
 before any real content lands behind it.
@@ -180,7 +185,109 @@ too, which is what lets the week-2 demo show two sessions apart in the trail.
 
 ### Not here
 
-No route calls the guarded surface yet: slice 10.1 builds the people and properties
-views on top of it. No second operator can be created either — the seeder creates but
-never updates, and there is no operator-management screen, so the viewer account for the
-week-2 demo has to be made by hand.
+~~No route calls the guarded surface yet~~ — slice 10.1 below is the caller this predicted.
+No second operator can be created either — the seeder creates but never updates, and there
+is no operator-management screen, so the viewer account for the week-2 demo has to be made
+by hand. That is still true after 10.1.
+
+## The views (slice 10.1)
+
+ROADMAP week 2's last bar: *the pilot building is browsable on staging*. `נכסים` and `אנשים`
+stop being empty states and render what the modules hold.
+
+### Server-rendered, with real URLs
+
+5.1's shell switched panels in the browser: seven `<section>`s in one file, one visible.
+That cannot be what 10.1 ships — a page whose content depends on which button was clicked
+last has no address, so it cannot be linked, bookmarked, reloaded, or opened from a phone.
+Each destination gets a URL and the server renders it:
+
+| route | what it renders |
+|---|---|
+| `GET /admin/properties` | every building; create form |
+| `POST /admin/properties` | `addBuilding` |
+| `GET /admin/properties/:buildingId` | the building and its units; create form |
+| `POST /admin/properties/:buildingId/units` | `addUnit` |
+| `GET /admin/units/:unitId` | the unit, its assets, its current tenancy, the people in it |
+| `GET /admin/people` | a phone lookup; no roster |
+| `POST /admin/people` | `addPerson` |
+| `GET /admin/people/:personId` | the person, their numbers, their tenancies |
+
+`ui/index.html` stays the one shell file and gains a marker the routes fill — the same
+substitution `loginPages()` already does on the login page's error paragraph, so there is
+still no template engine and no bundler (SPEC.md rule 6). Nav items become links carrying
+`aria-current` from the server; the only script left is the mobile drawer toggle.
+
+### `אנשים` is a lookup, not a roster
+
+There is no "list every person" read, and 10.1 deliberately does not add one. A screen whose
+entire content is the personal data of every tenant Dona Dom has, unscoped and unpaginated, is
+a liability the office does not need: people are reached **through the property** — building →
+unit → the parties on its tenancy — plus a phone box over `resolveByPhone`, which is how a
+caller is actually identified at a desk. `identity` grew `getPeople(ids)` and `listPhones`
+for this, and no list-all.
+
+### The guarded read surface (`internal/queries.ts`)
+
+Reads sit beside the mutations of `internal/commands.ts` — same deps, same `(input, session)`,
+same `requireCapability` — in their own file, because the audit rule differs. Every one checks
+`read`, which is the capability that until now had the matrix's only unexercised row.
+
+**Detail reads are audited; list reads are not.**
+
+| read | audited |
+|---|---|
+| `listBuildings` · `getBuilding` · `resolveByPhone` | — |
+| `getUnitDetail` · `getPersonDetail` | ✔ |
+
+The rule 9.1 wrote is that every staff *action* leaves a record, and the honest reading of
+that for reads is not "every page load". A row per nav click makes `audit_log` mostly
+navigation, and the week-2 demo — *show me these two sessions* — gets harder to read, not
+easier. What a privacy request actually asks is **who opened this tenant's record**, and that
+is the detail view: the screen where a name, a phone number and a unit are on one page. So the
+detail reads go through `audit.around` exactly as the mutations do, guard inside, so a refused
+read leaves an `error` row rather than none.
+
+**The read guard has no failing role today, and that is stated rather than glossed.** All
+three roles hold `read`, so `requireCapability(role, 'read')` on these five reads cannot
+currently refuse anyone — there is no reachable `not_allowed` on a view to test end to end.
+The check is there so that the day a fourth role arrives, the views are already asking the
+matrix instead of being opened by default. `internal/queries.test.ts` pins the whole grid so
+the fact stays visible; `commands.ts`'s `mutate` guard is the one with a live refusal, and
+9.1's test proves it.
+
+`inputs` carries the **subject id only** — never the name or the phone that was on the screen.
+Same reasoning as the mutation rows: the log says who looked at what, and copying the personal
+data into it would make the trail a second store of the thing it is protecting.
+
+### The viewer, proven twice
+
+A viewer holds `read`, so every view above renders for them. What they must not have is the
+create forms, and the two halves of that are not the same claim:
+
+- **The gate** is `requireCapability(role, 'mutate')` on the POST, reached through
+  `internal/commands.ts`. A viewer POSTing directly gets `not_allowed`, and the test proves it
+  by POSTing rather than by looking at the page.
+- **The hiding** is cosmetic and says so in the code. The form is not rendered for a viewer
+  because showing a control that always fails is bad manners, not because it protects anything.
+  9.1's rule holds: a hidden button is not a permission check.
+
+A refused POST re-renders its page with the refusal in Hebrew — never a stack trace, and never
+the raw error text (SPEC.md: one error shape, never leak internals).
+
+### Escaping
+
+Every value interpolated into these pages goes through the kernel's ``h`` tagged template
+(`SPEC-kernel.md`, "Escaping data into HTML"). This module is the first thing in the system to
+put database text into markup, and `ui/routes.ts` previously held it as a property that it
+never did.
+
+### Not here either
+
+- **CSRF tokens.** The session cookie is `SameSite=Lax`, which is what stops a cross-site form
+  POST from carrying it, so the create forms are not open. A token is still the belt to that
+  suspenders and stays deferred to week 6 alongside login CSRF, above.
+- **No edit and no delete.** Every view is list-and-create. Correcting a misspelled building is
+  still a manual database task — `portfolio` and `identity` both say so, and 10.1 does not
+  change it.
+- **No search, no pagination, no sorting controls.** The pilot is one building.

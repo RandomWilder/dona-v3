@@ -109,11 +109,24 @@ export interface GetUnitOptions {
   includeAccessNotes?: boolean;
 }
 
+export interface BuildingView {
+  building: Building;
+  units: Unit[];
+}
+
 export interface Portfolio {
   addBuilding(input: AddBuildingInput, actor: Actor): Promise<Building>;
   addUnit(input: AddUnitInput, actor: Actor): Promise<Unit>;
   addAsset(input: AddAssetInput, actor: Actor): Promise<Asset>;
   getUnit(unitId: string, options?: GetUnitOptions): Promise<UnitView>;
+  // Slice 10.1's browse path: listBuildings -> getBuilding -> getUnit. Until
+  // these existed nothing could learn a building id, so the two reads that take
+  // one had no way to be reached.
+  listBuildings(): Promise<Building[]>;
+  getBuilding(
+    buildingId: string,
+    options?: GetUnitOptions,
+  ): Promise<BuildingView>;
 }
 
 export interface PortfolioDeps {
@@ -437,6 +450,57 @@ export function createPortfolio(deps: PortfolioDeps): Portfolio {
           withNotes,
         ),
         assets: row.assets,
+      };
+    },
+
+    async listBuildings() {
+      // Ordered the way someone scanning a list looks for one, not by insertion
+      // time. No pagination: the portfolio is a few dozen buildings, and a LIMIT
+      // with no cursor is a silently truncated list, which is worse than a long
+      // one. This ordering is already the stable sort a keyset cursor would need.
+      const found = await pool.query<BuildingRow>(
+        `SELECT ${buildingColumns} FROM portfolio_buildings
+          ORDER BY city, street, house_number`,
+      );
+      // `false`, always — and there is no option to pass otherwise. Asking for
+      // one building's entry codes is a decision about that building; there is
+      // no legitimate "every entry code in the portfolio", and a list is exactly
+      // the shape where a field nobody asked for reaches a page or a screenshot.
+      return found.rows.map((row) => toBuilding(row, false));
+    },
+
+    async getBuilding(buildingId, options = {}) {
+      const id = validId(buildingId, 'buildingId');
+      const withNotes = options.includeAccessNotes === true;
+
+      const building = await pool.query<BuildingRow>(
+        `SELECT ${buildingColumns} FROM portfolio_buildings WHERE id = $1`,
+        [id],
+      );
+      const row = building.rows[0];
+      if (!row) {
+        throw new KernelError('not_found', 'building not found');
+      }
+      // Natural order, not lexicographic. label_key is text — the normaliser
+      // strips leading zeros but does not make `2` sort before `10`, and a
+      // plain ORDER BY label_key lists a real staircase as 1, 10, 11, 2. So a
+      // purely numeric label sorts as a number, and anything else (3א, קרקע)
+      // sorts as text after them. The regex guard is what keeps the cast from
+      // erroring on those.
+      const numeric = "label_key ~ '^[0-9]+$'";
+      const units = await pool.query<UnitRow>(
+        `SELECT ${unitColumns} FROM portfolio_units
+          WHERE building_id = $1
+          ORDER BY (${numeric}) DESC,
+                   CASE WHEN ${numeric} THEN label_key::bigint END,
+                   label_key`,
+        [id],
+      );
+      // One flag covers the building and its units: a caller who has asked for
+      // entry codes has asked.
+      return {
+        building: toBuilding(row, withNotes),
+        units: units.rows.map((unit) => toUnit(unit, withNotes)),
       };
     },
   };

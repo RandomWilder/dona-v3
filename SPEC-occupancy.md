@@ -149,6 +149,34 @@ The tenancy, its parties with their roles, and the unit. An unknown id is `not_f
 `null` — an id must have been issued by something, so a miss is a dangling reference. This
 follows `portfolio.getUnit` rather than `identity.findByPhone`.
 
+### `findCurrentTenancy(unitId) → TenancyView | null`
+
+The join read from the other side. `resolveByPhone` enters at a person and arrives at a
+place; the admin unit view enters at a place and needs to arrive at people, and until 10.1
+nothing could go that direction.
+
+**It reuses the same `today` predicate as `resolveByPhone`** — the module-level constant in
+`internal/tenancies.ts`, not a second copy of the SQL. "What current means" above is a rule
+this module has exactly one statement of; two statements is how the guarantor boundary comes
+back three hours late on one path and not the other. The boundary tests pin `21:30Z` from
+both sides here as they do there, and both flip if the `AT TIME ZONE` is dropped.
+
+**`null`, not `not_found`, for a unit standing empty.** The unit id is a system id, so the
+system-id rule would say `not_found` — but the miss here is not a dangling reference. The
+unit exists and the question "who lives here" has the true answer "nobody right now": an
+empty flat between tenancies is an ordinary state of the world, and the admin view renders it
+as a vacancy rather than as an error. A unit id that names nothing at all is a different
+matter, and `portfolio.getUnit` raises `not_found` for it before this is reached.
+
+**At most one.** The unique key is `(unit_id, starts_on)`, which does not by itself stop two
+overlapping tenancies on one unit — see "Not yet in place". Until that constraint exists this
+read orders by `starts_on DESC` and returns the most recent current one, and its test asserts
+that shape deliberately rather than by accident. Note what is *not* being done: 7.1 rejected
+"most recent wins" for `resolveByPhone`, because there a person renting two flats is a fact
+and collapsing it answers about the wrong flat. Here the plurality would be data corruption
+rather than a fact, and the view showing the latest is the least-wrong reading of a state
+that should not exist.
+
 ### `resolveByPhone(phone) → OccupancyResolution | null`
 
 The chain the agent calls on every conversation.
@@ -213,9 +241,10 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   schema-level fix is an exclusion constraint over a `daterange`, which needs the
   `btree_gist` extension; whether the Cloud SQL runtime user may `CREATE EXTENSION` is
   unverified, and finding out is its own slice rather than a guess inside this one.
-- **Reads are not audited.** `resolveByPhone` and `getTenancy` write nothing. Their callers
-  audit their own use, and a PII-read trail is a week-6 concern — the same position
-  `identity` takes.
+- **Reads are not audited.** `resolveByPhone`, `getTenancy` and `findCurrentTenancy` write
+  nothing. Their callers audit their own use — as of 10.1 `staff` does exactly that, writing a
+  row when an operator *opens* a unit and none when a list is rendered (`SPEC-staff.md`) — and
+  a broader PII-read trail is a week-6 concern, the same position `identity` takes.
 - **No lease documents.** Week 3 indexes them per occupancy; `tenancyAccess` is the value
   that will scope the retrieval.
 - **No rent, no money, ever.** SPEC.md rule 7. The lease's rent is an index-linked formula

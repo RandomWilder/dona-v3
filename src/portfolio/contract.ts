@@ -8,6 +8,7 @@ export type {
   Asset,
   AssetKind,
   Building,
+  BuildingView,
   GetUnitOptions,
   Portfolio,
   PortfolioDeps,

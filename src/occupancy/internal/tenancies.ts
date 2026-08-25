@@ -108,6 +108,9 @@ export interface Occupancy {
   addParty(input: AddPartyInput, actor: Actor): Promise<Party>;
   endTenancy(input: EndTenancyInput, actor: Actor): Promise<Tenancy>;
   getTenancy(tenancyId: string): Promise<TenancyView>;
+  // Slice 10.1: the join read from the other side. resolveByPhone enters at a
+  // person and arrives at a place; the admin unit view enters at a place.
+  findCurrentTenancy(unitId: string): Promise<TenancyView | null>;
   resolveByPhone(phone: string): Promise<OccupancyResolution | null>;
 }
 
@@ -141,6 +144,26 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
   const audit = deps.audit ?? createAuditLog(pool, clock);
   const identity = deps.identity ?? createIdentity({ pool, clock, audit });
   const portfolio = deps.portfolio ?? createPortfolio({ pool, clock, audit });
+
+  // The whole view for one tenancy. Both entry points into it — by tenancy id
+  // and by unit — assemble it here rather than one calling the other through
+  // `this`, which in an object literal is a binding waiting to be broken by a
+  // destructured import.
+  async function tenancyView(tenancy: Tenancy): Promise<TenancyView> {
+    const parties = await pool.query<{ person_id: string; role: string }>(
+      `SELECT person_id, role FROM occupancy_parties
+        WHERE tenancy_id = $1
+        ORDER BY person_id, role`,
+      [tenancy.id],
+    );
+    return {
+      tenancy,
+      parties: groupParties(parties.rows),
+      // Without access notes: an entry code must not reach a caller that did
+      // not ask, the rule portfolio.getUnit enforces from its side.
+      unit: await portfolio.getUnit(tenancy.unitId),
+    };
+  }
 
   async function readTenancy(tenancyId: string): Promise<Tenancy> {
     const found = await pool.query<TenancyRow>(
@@ -312,20 +335,40 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     },
 
     async getTenancy(tenancyId) {
-      const id = validId(tenancyId, 'tenancyId');
-      const tenancy = await readTenancy(id);
-      const parties = await pool.query<{ person_id: string; role: string }>(
-        `SELECT person_id, role FROM occupancy_parties
-          WHERE tenancy_id = $1
-          ORDER BY person_id, role`,
-        [id],
+      return tenancyView(await readTenancy(validId(tenancyId, 'tenancyId')));
+    },
+
+    async findCurrentTenancy(unitId) {
+      const id = validId(unitId, 'unitId');
+      // The same `today` the whole module shares — not a second copy of the
+      // predicate. Two statements of "what current means" is how the boundary
+      // comes back three hours late on one path and not the other.
+      //
+      // starts_on DESC because (unit_id, starts_on) does not by itself prevent
+      // two overlapping tenancies on one unit (see SPEC-occupancy.md, "Not yet
+      // in place"). That plurality would be corruption rather than a fact — the
+      // opposite of a person renting two flats, which is why 7.1 refused to
+      // collapse *that* — so the view shows the latest and the shape is
+      // asserted deliberately rather than left to chance.
+      const found = await pool.query<TenancyRow>(
+        `SELECT ${tenancyColumns}
+           FROM occupancy_tenancies t
+          WHERE t.unit_id = $2
+            AND t.starts_on <= ${today}
+            AND (t.ends_on IS NULL OR t.ends_on >= ${today})
+          ORDER BY t.starts_on DESC, t.id
+          LIMIT 1`,
+        [clock.now(), id],
       );
-      const unit = await portfolio.getUnit(tenancy.unitId);
-      return {
-        tenancy,
-        parties: groupParties(parties.rows),
-        unit,
-      };
+      const row = found.rows[0];
+      // null, not not_found: the unit exists and nobody lives there right now,
+      // which is an ordinary state the view renders as a vacancy. A unit id
+      // naming nothing at all is portfolio.getUnit's not_found, raised before
+      // this is reached.
+      if (!row) {
+        return null;
+      }
+      return tenancyView(toTenancy(row));
     },
 
     async resolveByPhone(phone) {

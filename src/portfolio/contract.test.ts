@@ -246,6 +246,123 @@ describe('portfolio contract', () => {
     });
   });
 
+  it('walks the browse path: list → building → unit', async (t) => {
+    // Slice 10.1's whole reason for these reads. The admin properties view
+    // starts holding nothing, and each read must hand it what the next needs.
+    await withPool(t, async (pool) => {
+      const portfolio = createPortfolio({ pool });
+      const address = uniqueAddress();
+      const building = await portfolio.addBuilding(address, actor);
+      const unit = await portfolio.addUnit(
+        { buildingId: building.id, label: '3', floor: 1 },
+        actor,
+      );
+
+      // 1. A list, entered with no id in hand at all.
+      const listed = await portfolio.listBuildings();
+      const mine = listed.find((b) => b.id === building.id);
+      assert.ok(mine, 'the new building is in the list');
+      assert.equal(mine.street, address.street);
+
+      // 2. Its units, from the id the list gave.
+      const view = await portfolio.getBuilding(mine.id);
+      assert.equal(view.building.id, building.id);
+      assert.deepEqual(
+        view.units.map((u) => u.id),
+        [unit.id],
+      );
+
+      // 3. The unit, from the id the building gave.
+      const detail = await portfolio.getUnit(view.units[0].id);
+      assert.equal(detail.unit.label, '3');
+      assert.equal(detail.building.id, building.id);
+    });
+  });
+
+  it('lists buildings by address, not by insertion time', async (t) => {
+    await withPool(t, async (pool) => {
+      const portfolio = createPortfolio({ pool });
+      const city = `עיר ${newId()}`;
+      // Written in the reverse of the order they must come back in.
+      for (const street of ['ג', 'ב', 'א']) {
+        await portfolio.addBuilding(
+          { name: 'בית', city, street, houseNumber: '1' },
+          actor,
+        );
+      }
+      const mine = (await portfolio.listBuildings()).filter(
+        (b) => b.city === city,
+      );
+      assert.deepEqual(
+        mine.map((b) => b.street),
+        ['א', 'ב', 'ג'],
+      );
+    });
+  });
+
+  it('orders units naturally, so 2 comes before 10 and text comes last', async (t) => {
+    // A lexicographic sort on label_key lists a real staircase as 1, 10, 11, 2.
+    // This test failed on exactly that and the spec was corrected to match it.
+    await withPool(t, async (pool) => {
+      const portfolio = createPortfolio({ pool });
+      const building = await portfolio.addBuilding(uniqueAddress(), actor);
+      for (const label of ['10', '2', 'קרקע', '1', '3א']) {
+        await portfolio.addUnit({ buildingId: building.id, label }, actor);
+      }
+      const view = await portfolio.getBuilding(building.id);
+      assert.deepEqual(
+        view.units.map((u) => u.label),
+        ['1', '2', '10', '3א', 'קרקע'],
+      );
+    });
+  });
+
+  it('never returns access notes from the list, and asks on the building', async (t) => {
+    // The rule the list exists under: one building's entry codes are a decision
+    // about that building. There is no option on listBuildings to ask.
+    await withPool(t, async (pool) => {
+      const portfolio = createPortfolio({ pool });
+      const building = await portfolio.addBuilding(
+        { ...uniqueAddress(), accessNotes: 'קוד שער 4417' },
+        actor,
+      );
+      await portfolio.addUnit(
+        { buildingId: building.id, label: '3', accessNotes: 'מפתח אצל השכן' },
+        actor,
+      );
+
+      const listed = (await portfolio.listBuildings()).find(
+        (b) => b.id === building.id,
+      );
+      assert.ok(listed);
+      assert.equal('accessNotes' in listed, false);
+
+      const silent = await portfolio.getBuilding(building.id);
+      assert.equal('accessNotes' in silent.building, false);
+      assert.equal('accessNotes' in silent.units[0], false);
+
+      // One flag covers the building and its units.
+      const asked = await portfolio.getBuilding(building.id, {
+        includeAccessNotes: true,
+      });
+      assert.equal(asked.building.accessNotes, 'קוד שער 4417');
+      assert.equal(asked.units[0].accessNotes, 'מפתח אצל השכן');
+    });
+  });
+
+  it('reports an unknown building id as not_found, and an empty one as []', async (t) => {
+    await withPool(t, async (pool) => {
+      const portfolio = createPortfolio({ pool });
+      await assert.rejects(
+        () => portfolio.getBuilding(newId()),
+        (error: KernelError) => error.code === 'not_found',
+      );
+      // A building with no units yet is not an error — it is a new building.
+      const empty = await portfolio.addBuilding(uniqueAddress(), actor);
+      assert.deepEqual((await portfolio.getBuilding(empty.id)).units, []);
+    });
+  });
+
   it('audits every mutation and every refusal', async (t) => {
     await withPool(t, async (pool) => {
       const portfolio = createPortfolio({ pool });
