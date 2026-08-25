@@ -76,6 +76,12 @@ function pdfOf(pages: PdfPage[]): PdfText {
 
 const emptyPdf: PdfText = pdfOf([]);
 
+// Enough text for a page to be a page: below `minPageChars` of readable text a
+// page is an image with a footer on it, which is a property of the chunker for
+// its own tests to exercise rather than for these to trip over.
+const pageFiller =
+  'הצדדים מצהירים כי קראו את ההסכם, הבינו את תוכנו ואת מלוא התחייבויותיהם על פיו.';
+
 // One right-aligned Hebrew line on a page, in the top-down coordinates the
 // kernel adapter produces.
 function pdfPage(number: number, lines: string[]): PdfPage {
@@ -83,7 +89,7 @@ function pdfPage(number: number, lines: string[]): PdfPage {
     number,
     width: 595,
     height: 842,
-    items: lines.map((text, index) => ({
+    items: [...lines, pageFiller].map((text, index) => ({
       text,
       x: 150,
       y: 60 + index * 20,

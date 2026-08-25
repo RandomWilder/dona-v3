@@ -39,6 +39,18 @@ function line(y: number, text: string): PdfTextItem {
   return run(150, y, text, 340);
 }
 
+// Enough text for a page to be a page. A real lease page carries hundreds of
+// characters and an image-only one carries its footer, which is the distinction
+// `minPageChars` draws -- so a fixture about something else has to clear the bar
+// rather than trip over it. The alternative, a threshold low enough for
+// one-line fixtures, would let the real document's floor plan through.
+function filler(y: number): PdfTextItem {
+  return line(
+    y,
+    'הצדדים מצהירים כי קראו את ההסכם, הבינו את תוכנו ואת מלוא התחייבויותיהם על פיו.',
+  );
+}
+
 // A נספח א׳ row: the label on the right, its value in the left column, both on
 // one baseline. This is the layout the reference note names as the reason
 // clause-aware chunking is required rather than merely tidier.
@@ -52,9 +64,10 @@ describe('clause chunking', () => {
       page(1, [
         run(400, 100, 'דמי השכירות', 90),
         run(330, 100, 'ישולמו מראש', 60),
+        filler(140),
       ]),
     ]);
-    assert.equal(chunks[0]?.text, 'דמי השכירות ישולמו מראש');
+    assert.equal(chunks[0]?.text.split('\n')[0], 'דמי השכירות ישולמו מראש');
   });
 
   it('binds a value to its own label and not to the label above it', () => {
@@ -104,7 +117,7 @@ describe('clause chunking', () => {
         line(700, '14. השוכר יאפשר לבעלים גישה לדירה לצורך תיקונים,'),
         line(720, 'ובלבד שנמסרה הודעה מוקדמת של 24 שעות.'),
       ]),
-      page(13, [line(60, 'הודעה כאמור תימסר בכתב או במסרון.')]),
+      page(13, [line(60, 'הודעה כאמור תימסר בכתב או במסרון.'), filler(90)]),
     ]);
     const clause = chunks.find((chunk) => chunk.clauseRef === '§14');
     assert.equal(clause?.pageFrom, 12);
@@ -130,10 +143,10 @@ describe('clause chunking', () => {
     // a spec cover and one page of tables. OCR is week 3's cut line, so the
     // honest output is a lease that says which pages are missing from it.
     const { chunks, imageOnlyPages } = chunkLease([
-      page(1, [line(60, '1. תחילת ההסכם.')]),
+      page(1, [line(60, '1. תחילת ההסכם.'), filler(90)]),
       page(2, []),
       page(3, []),
-      page(4, [line(60, '2. סיום ההסכם.')]),
+      page(4, [line(60, '2. סיום ההסכם.'), filler(90)]),
     ]);
     assert.deepEqual(imageOnlyPages, [2, 3]);
     assert.deepEqual(
@@ -240,5 +253,33 @@ describe('clause chunking', () => {
       ['§4'],
     );
     assert.match(chunks[0]?.text ?? '', /בסעיף 12/);
+  });
+  it('counts a page carrying only its own page number as an image', () => {
+    // The floor plan and the spec cover each carry a running footer, so each
+    // yields one text item. Reading "has any text at all" as "is a page of
+    // text" reported every page of the real lease as readable, against a
+    // reference note that measured four image-only pages -- a false all-clear
+    // on an incomplete document.
+    const { chunks, imageOnlyPages } = chunkLease([
+      page(23, [
+        line(60, '18. השוכר יחזיר את המושכר במצב בו קיבלו, למעט בלאי סביר.'),
+        filler(90),
+      ]),
+      page(24, [line(800, '- 24 -')]),
+    ]);
+    assert.deepEqual(imageOnlyPages, [24]);
+    // And the footer went with it: a page number appended to the end of the
+    // previous clause is not part of a contract.
+    assert.equal(chunks.length, 1);
+    assert.doesNotMatch(chunks[0]?.text ?? '', /- 24 -/);
+    assert.equal(chunks[0]?.pageTo, 23);
+  });
+
+  it('keeps a short page that is genuinely a short page', () => {
+    const short =
+      '12. הודעות. כל הודעה תישלח בדואר רשום או תימסר ביד לכתובות שבנספח א׳.';
+    const { chunks, imageOnlyPages } = chunkLease([page(9, [line(60, short)])]);
+    assert.deepEqual(imageOnlyPages, []);
+    assert.equal(chunks[0]?.clauseRef, '§12');
   });
 });

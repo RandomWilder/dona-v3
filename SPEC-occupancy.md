@@ -407,7 +407,17 @@ only *derived* rows. Nothing a human wrote is removable here any more than it wa
 
 ### An incomplete lease says so, and keeps saying it
 
-Pages with no text layer are **counted, named and stored**, never dropped. The reference note
+Pages with no readable text are **counted, named and stored**, never dropped.
+
+**"No text layer" is the wrong test, and the real lease proved it.** The first cut flagged a
+page only when it yielded *zero* text items, and reported *"בכל העמודים נמצא טקסט"* — every
+page readable — for the document the reference note measured as having four image-only pages.
+The floor plan and the spec cover each carry a running footer, so each yielded one item and
+passed for a page of prose. A **false all-clear on an incomplete document** is worse than
+saying nothing: the operator reading an answer out of it has been told there is nothing
+missing. The bar is `minPageChars` of readable text, and a page under it is dropped rather
+than chunked — which takes the footer with it, since `- 15 -` on the end of a clause is a page
+number pretending to be part of a contract. The reference note
 warns that a complete lease is not one file — two annexes say their content was emailed
 separately, and the handover protocol was blank — so ingestion must "expect an incomplete
 document and say so, rather than treating absence as 'no guarantee exists'".
