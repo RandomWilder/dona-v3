@@ -116,6 +116,72 @@ this script.
 Why prod has its own Cloud SQL instance rather than a second database on
 staging's: `docs/decisions/ADR-0001-prod-database-isolation.md`.
 
+## Reach a database from a laptop (slice 11.1)
+
+Nothing outside the app had ever connected to staging's database: Cloud Run
+reaches it over a unix socket, which a laptop does not have. The path is the
+Cloud SQL proxy, authenticated as whoever is logged into `gcloud` — no key file,
+and the access lands in the audit log under that person's own identity rather
+than the runtime service account's.
+
+Once, per machine:
+
+```bash
+gcloud components install cloud-sql-proxy
+```
+
+Two things that go wrong on a fresh machine, neither of them ours:
+
+- The install finishes, and then the SDK offers to install its own bundled
+  Python 3.13 and asks for a **sudo password**. The proxy is already installed by
+  that point — cancel it. `cloud-sql-proxy --version` confirms.
+- The proxy authenticates with **Application Default Credentials**, a different
+  credential from the accounts in `gcloud auth list`. An expired ADC session
+  fails as `invalid_grant … invalid_rapt`, which reads like a permissions
+  problem and is not. Fix: `gcloud auth application-default login`.
+
+Then, for an ad-hoc session:
+
+```bash
+cloud-sql-proxy --port 5433 dona-v3:me-west1:dona-staging
+```
+
+The database URL in Secret Manager names the socket
+(`…?host=/cloudsql/dona-v3:me-west1:dona-staging`); through the proxy the same
+user and password connect to `127.0.0.1:5433`. `infra/reset-staging-data.sh`
+does that rewrite itself and never prints the secret.
+
+## Reset staging's data (slice 11.1)
+
+Makes staging *be* the mock building we designed — three buildings, ten units,
+thirteen people — rather than whatever it has accumulated.
+
+A note carried out of week 2 said staging held ~1,291 test buildings and ~1,000
+test people. **Measured on day 11, it held one person and no buildings.** The
+residue is real, but it lives on the developer's laptop and in CI's throwaway
+service container, not here: CI runs against a Postgres container on `127.0.0.1`
+that dies with the job, and nothing but the app has ever reached staging's
+database. The hazard the note describes is still worth avoiding — the importer
+keys a person by phone, so a dirty database returns the **wrong people**, three
+of five lookups when it was measured — which is why this is a command rather
+than a cleanup someone did once.
+
+```bash
+./infra/reset-staging-data.sh            # reports what it would remove
+./infra/reset-staging-data.sh --commit   # removes it, then seeds the template
+```
+
+It empties the domain tables and re-seeds staging from
+`docs/reference/tenant-table-template.csv` — three buildings, ten units, thirteen
+people. **Staff logins, sessions, login attempts and the audit log survive**: the
+logins are in use and the audit trail is evidence. `idempotency_keys` does *not*
+survive, and that is deliberate — every key in it memoizes a domain command's
+result, so leaving it behind would hand a re-import the id of a person who no
+longer exists. The list, and the reasoning, live in `src/reset/contract.ts`.
+
+Staging only. There is no argument that points it at prod, and the script checks
+the connection name in the secret before it opens a tunnel to anything.
+
 ## The staff login (slice 5.2)
 
 Bootstrap creates two secrets per environment — `<env>-staff-seed-email` and

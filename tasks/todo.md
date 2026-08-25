@@ -17,28 +17,43 @@ Previous week: `tasks/week-2.md` (closed — the pilot building is browsable, ro
 > runs on mock data we define (PIPELINE.md §1.5), and the data request to Dona Dom is derived
 > from our templates at sign-off. Slice 8.1 closed under that corrected bar.
 
-### Slice 11.1 — Reset staging and seed it from the template ☐
-- [ ] **Staging carries ~1,291 test buildings and ~1,000 test people** left by contract-test
-      runs against the shared database. It is the wrong ground for anything: validating the
-      template against a dirty database returned the **wrong people** for three of five phone
-      lookups, because the importer keys a person by phone and those numbers were already
-      held by test-generated people. On staging that would be a real isolation failure wearing
-      a mock costume
-- [ ] Truncate the **domain** tables only — `identity` / `portfolio` / `occupancy`. Leave
+### Slice 11.1 — Reset staging and seed it from the template ☑
+- [x] ~~**Staging carries ~1,291 test buildings and ~1,000 test people**~~ — **it did not, and
+      measuring that was the slice.** Staging held **one person and no buildings**; the
+      preserved counts alongside (2 operators, 27 audit rows) prove it was the right database.
+      The residue is on the **laptop** (2,843 people, 2,721 buildings) and in CI's throwaway
+      service container — `ci.yml:41` runs against `127.0.0.1:5432`, which dies with the job,
+      and nothing outside the app had ever reached staging's database. The hazard was real —
+      the importer keys a person by phone, so a dirty database returns the *wrong people*,
+      three of five lookups when it was measured during 8.1 — but those were local lookups.
+      The fix stands; the reason written into the code and the runbook is now the true one
+- [x] Truncate the **domain** tables only — `identity` / `portfolio` / `occupancy`. Leave
       `staff_operators`, `staff_sessions` and `audit_log` intact: the logins are in use and the
-      week-2 audit trail is evidence
-- [ ] Re-seed from `docs/reference/tenant-table-template.csv`, so staging *is* the mock
+      week-2 audit trail is evidence. Counted before and after, and a preserved table that
+      moves raises. No `CASCADE`, so an unlisted table that references one of these fails
+      loudly instead of being reached through
+- [x] **`idempotency_keys` had to go with them** — not on the original list, and the finding of
+      the slice. Every key memoizes a domain command (`identity.addPerson:import:person:…`),
+      so emptying people while keeping the memo hands the next import the id of a person who
+      no longer exists: a broken graph that looks like a clean re-seed. Staff auth never
+      touches the store
+- [x] Re-seed from `docs/reference/tenant-table-template.csv`, so staging *is* the mock
       building we designed — 3 buildings, 10 units, 13 people, one vacancy, one guarantor
-- [ ] **Repeatable, not a one-off.** `infra/reset-staging-data.sh`, in the repo, reviewable —
-      contract tests will start depositing residue again the moment CI runs, so this is a
-      command we will want more than once
-- [ ] **A local→Cloud SQL path has to exist first** and does not today: no `cloud-sql-proxy`
-      installed, and nothing outside the app has ever reached staging's database. Establishing
-      it is part of this slice and wants writing into `docs/runbook-deploy.md`
+- [x] **Repeatable, not a one-off.** `infra/reset-staging-data.sh` — staging only, with no flag
+      that changes it: it reads the connection name out of the secret and refuses anything but
+      `dona-staging` before opening a tunnel
+- [x] **A local→Cloud SQL path** established and written into `docs/runbook-deploy.md`,
+      including the two things that waste an hour on a fresh machine: the sudo prompt from the
+      SDK's own Python installer, and ADC being a separate credential from `gcloud auth list`
 
 **Done when:** `נכסים` on staging shows exactly the template's three buildings, and a phone
 lookup returns the person the CSV says it should.
 **Verify:** browse staging; five `resolveByPhone` spot-checks against the CSV. · Size: M
+**Closed 2026-08-25 — one half owed.** Staging reads `buildings 3 · units 10 · people 13 ·
+tenancies 10`, and **seven** spot-checks resolve to the person the CSV names, including one
+person reaching two tenancies with different access from a spelling not in the file. Evidence:
+`tasks/evidence/day-11-staging-reset.md`. **The browse is the owner's** — it needs the admin
+password, which was never shared, the same reason the week-2 demo was run by Asaf.
 
 ### Slice 11.2 — Lease upload → GCS, attached to an occupancy ☐
 > **Working document:** the real signed lease already in the buckets. Asaf's call on
@@ -127,7 +142,7 @@ lookup returns the person the CSV says it should.
 
 ## Carried in from weeks 1–2
 - ~~**The real tenant table**~~ — no longer carried. Fuse 3 was reframed 2026-08-25: dev runs on data we define, the request is derived from our templates at sign-off, and 8.1 closed under the corrected bar.
-- **Staging carries test residue** (~1,291 buildings, ~1,000 people) — slice 11.1. **The building list is unbounded**, which the residue made visible; a few-dozen-building portfolio does not need pagination, and after 11.1 staging will hold three.
+- ~~**Staging carries test residue** (~1,291 buildings, ~1,000 people)~~ — **withdrawn 2026-08-25, measured false.** Staging held one person and no buildings; the residue is local and CI-ephemeral. Closed by 11.1, which now seeds rather than cleans. **The building list is unbounded** remains true and is now un-evidenced by anything on staging — a few-dozen-building portfolio does not need pagination, and staging holds three. Carried to week 6 hardening rather than week 3.
 - **The real lease leaves both buckets at phase-1 sign-off.** Fuse 3 holds the deadline.
 - **`administer` has no command and there is no operator-management screen.** The week-2 viewer arrived by a seeder; a third operator or a role change is still a manual database task.
 - **`staff`'s session sweep makes the suite flaky.** `login()` and `readSession()` each delete every expired session using their own clock, and `node --test` runs files in parallel against one database. Seen once in five gate runs during 7.1, and once more in 10.1 — uncaptured, and not reproduced in 17 runs after. Wants `SPEC-staff.md` reasoning first.
