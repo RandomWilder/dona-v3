@@ -9,7 +9,11 @@ import type {
   Building,
   BuildingView,
 } from '../../portfolio/contract.ts';
-import type { PersonDetail, UnitDetail } from '../internal/queries.ts';
+import type {
+  DocumentChunks,
+  PersonDetail,
+  UnitDetail,
+} from '../internal/queries.ts';
 import type { StaffRole } from '../internal/roles.ts';
 import { permits } from '../internal/roles.ts';
 
@@ -191,6 +195,29 @@ function fileSize(bytes: number): Html {
   return ltr(mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 }
 
+// "Not read yet" and "read, and produced nothing" are different facts, and a
+// count alone cannot tell them apart -- so an un-ingested document says so and
+// offers the button, and an ingested one links to what came out of it.
+function clauseCell(
+  unitId: string,
+  documentId: string,
+  count: number | undefined,
+  context: PageContext,
+): Html {
+  const url = `/admin/units/${unitId}/documents/${documentId}/chunks`;
+  const ingest = permits(context.role, 'mutate')
+    ? h`<form method="post"
+              action="/admin/units/${unitId}/documents/${documentId}/ingest"
+              class="inline">
+              <button type="submit" class="linkish">${count === undefined ? 'קריאת סעיפים' : 'קריאה מחדש'}</button>
+            </form>`
+    : h``;
+  if (count === undefined) {
+    return h`<span class="muted">טרם נקרא</span> ${ingest}`;
+  }
+  return h`<a href="${url}">${ltr(String(count))} סעיפים</a> ${ingest}`;
+}
+
 // The documents on a tenancy, and — for a role that may write — the form that
 // adds one. A vacant flat gets neither: a document hangs off a tenancy, and
 // there is none to hang it on.
@@ -198,14 +225,16 @@ function documentsCard(detail: UnitDetail, context: PageContext): Html {
   if (!detail.tenancy) {
     return h``;
   }
+  const unitId = detail.unit.unit.id;
   const listed = detail.documents.length
     ? h`<table class="rows">
-            <thead><tr><th>מסמך</th><th>נוסף</th><th>גודל</th></tr></thead>
+            <thead><tr><th>מסמך</th><th>נוסף</th><th>גודל</th><th>סעיפים</th></tr></thead>
             <tbody>${detail.documents.map(
               (document) => h`<tr>
                 <td><a href="/admin/documents/${document.id}">${documentKindNames[document.kind] ?? document.kind}</a></td>
                 <td>${date(document.createdAt.slice(0, 10))}</td>
                 <td>${fileSize(document.byteSize)}</td>
+                <td>${clauseCell(unitId, document.id, detail.chunkCounts[document.id], context)}</td>
               </tr>`,
             )}</tbody>
           </table>`
@@ -312,6 +341,64 @@ export function unitPage(detail: UnitDetail, context: PageContext): Html {
             ${assets}
           </div>
         </section>`;
+}
+
+// What one document was cut into. A verification surface before it is anything
+// else: the slice's bar is that a human can spot-read chunks against the PDF,
+// and this is where that is done. Deliberately plain.
+export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
+  const { unit, building } = detail.unit;
+  const kind = documentKindNames[detail.document.kind] ?? detail.document.kind;
+
+  const body = detail.chunks.length
+    ? h`${detail.chunks.map(
+        (chunk) => h`<div class="card">
+            <p class="muted">
+              ${
+                chunk.clauseRef
+                  ? clauseTag(chunk.clauseRef)
+                  : h`<span class="muted">ללא מספור</span>`
+              }
+              · ${pageRange(chunk.pageFrom, chunk.pageTo)}
+            </p>
+            <p class="clause">${chunk.text}</p>
+          </div>`,
+      )}`
+    : h`<p class="empty-state">המסמך טרם נקרא לסעיפים.</p>`;
+
+  return h`<section class="panel stack">
+          ${crumbs([
+            ['נכסים', '/admin/properties'],
+            [building.name, `/admin/properties/${building.id}`],
+            [`דירה ${unit.label}`, `/admin/units/${unit.id}`],
+            [kind],
+          ])}
+          <h1>${kind} — סעיפים</h1>
+          <p class="muted">
+            ${address(building)} · דירה ${unit.label} ·
+            <a href="/admin/documents/${detail.document.id}">המסמך המקורי</a>
+          </p>
+          ${errorNote(context)}
+          ${body}
+        </section>`;
+}
+
+// `נספח א׳ §3.1–3.3` is Hebrew followed by a number range, and inside an RTL
+// paragraph the range's own dash and digits are neutral -- so it lays out
+// mirrored, and the citation reads §3.3–3.1. The annex stays in the page's
+// direction and the number is isolated, like every other number here.
+function clauseTag(ref: string): Html {
+  const cut = ref.indexOf('§');
+  if (cut < 0) {
+    return h`<span class="tag">${ref}</span>`;
+  }
+  const annex = ref.slice(0, cut).trim();
+  return h`<span class="tag">${annex ? h`${annex} ` : h``}${ltr(ref.slice(cut))}</span>`;
+}
+
+// Read left to right inside a right-to-left page, like every other number here.
+function pageRange(from: number, to: number): Html {
+  return h`עמוד ${ltr(from === to ? String(from) : `${from}–${to}`)}`;
 }
 
 function tenancyRows(occupancy: OccupancyResolution | null): Html {

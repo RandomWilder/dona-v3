@@ -29,6 +29,7 @@ import { createStaffQueries } from '../internal/queries.ts';
 import {
   buildingPage,
   buildingsPage,
+  chunksPage,
   emptyPage,
   type PageContext,
   peoplePage,
@@ -329,6 +330,20 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
   );
 
   app.get(
+    '/admin/units/:unitId/documents/:documentId/chunks',
+    page('properties', async (session, context, request) =>
+      chunksPage(
+        await queries.getDocumentChunks(
+          param(request, 'unitId'),
+          param(request, 'documentId'),
+          session,
+        ),
+        context,
+      ),
+    ),
+  );
+
+  app.get(
     '/admin/people',
     page('people', async (session, context, request) => {
       const phone = queryText(request, 'phone');
@@ -466,6 +481,30 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
       return reply.redirect(`${back}?error=${code}`, 302);
     }
   });
+
+  // Reading a stored lease into clauses. A button and not a step of the upload:
+  // the lease this system reads was in the bucket before ingestion existed, and
+  // a 38-page extraction inside the upload request would hold the browser open
+  // for no gain (SPEC-staff.md, "Ingesting a document").
+  create(
+    '/admin/units/:unitId/documents/:documentId/ingest',
+    (request) => `/admin/units/${encodeURIComponent(param(request, 'unitId'))}`,
+    async (_body, session, request) => {
+      const unitId = param(request, 'unitId');
+      const documentId = param(request, 'documentId');
+      // The document has to be this unit's, checked on the server. 11.2 resolves
+      // the tenancy from the unit rather than accepting one from the browser;
+      // this is the same rule where the browser supplies both ids.
+      const tenancy = await occupancy.findCurrentTenancy(unitId);
+      const documents = tenancy
+        ? await occupancy.listDocuments(tenancy.tenancy.id)
+        : [];
+      if (!documents.some((document) => document.id === documentId)) {
+        throw new KernelError('not_found', 'document not found');
+      }
+      await commands.ingestDocument({ documentId }, session);
+    },
+  );
 
   // The bytes back. Inline rather than an attachment: an operator checking a
   // lease wants to read it, and a download would leave the file on a laptop.

@@ -4,7 +4,7 @@ Conventions inherited from SPEC.md. The join module: it is the only place in the
 where a person and a place meet.
 
 - **Responsibility:** Current tenancy — who lives where, who is billed, who guaranteed it;
-  lease documents indexed per occupancy (week 3)
+  lease documents indexed per occupancy, and the clauses they are cut into (week 3)
 - **Depends on:** identity, portfolio — through their `contract.ts` only
 - **Commands:** `openTenancy` · `addParty` · `endTenancy` · `getTenancy` · `resolveByPhone`
 - **Events:** none yet — nothing downstream reacts to a tenancy opening
@@ -317,6 +317,132 @@ Both reads are unaudited here, as this module's other reads are, and their calle
 their own use — `staff` writes a row when an operator opens a document, exactly as it does
 for a unit.
 
+## Lease chunks (slice 12.1)
+
+A stored document is bytes. This slice makes it *readable by clause*: PDF text out, chunks
+in, each one carrying the place in the document it came from. Slice 12.2 embeds these rows;
+13.1 extracts the twin's fields from them. Nothing here is a model call — the whole slice is
+deterministic, which is why it can be pinned by unit tests before retrieval sits on top.
+
+`docs/reference/lease-template-donadom.md` measured the ground first, and two of its findings
+are the design:
+
+- **34 of 38 pages carry a clean Hebrew text layer.** Hebrew OCR is not needed for the prose,
+  which was the largest unknown in the week-3 plan.
+- **The difficulty is layout, not characters.** נספח א׳ — where the unit, the term, the rent
+  and the securities live — is a two-column label/value table, and naive extraction interleaves
+  each value with the label on the line *above* it. A lease read that way answers "מהו גובה
+  דמי השכירות" with the maintenance fee. Clause-aware chunking is required for a correct
+  answer, not for a tidier one.
+
+| Table | Holds |
+|---|---|
+| `occupancy_document_chunks` | `id`, `document_id`, `tenancy_id`, `ordinal`, `clause_ref`, `heading`, `page_from`, `page_to`, `text`, `created_at` |
+
+Migration `0010_occupancy_document_chunks.sql`. `ON DELETE RESTRICT` to both parents, as
+everything else in this module is.
+
+### `tenancy_id` is on the chunk row, deliberately duplicated
+
+It is reachable through `document_id`, and it is stored anyway. Slice 12.2's rule — SPEC.md's
+"absolute tenant isolation enforced at the query layer" — is that **every retrieval query is
+filtered by occupancy**. A filter on a column of the table being searched is one `WHERE`
+clause that a vector search cannot be written without noticing; a filter that requires joining
+back to `occupancy_documents` is a join a later query can be written without, and the query
+that forgets it returns another tenant's lease.
+
+The duplication is safe because a document never moves between tenancies: `attachDocument`
+resolves the tenancy server-side and nothing can re-file a document afterwards. The value is
+copied from the document row at ingest and is never taken from a caller.
+
+### What a chunk points at
+
+`clause_ref` is what a citation will say — `נספח א׳ §3.2`, `§14.1`, `נספח י״ב §2`. The annex
+is carried as a prefix because clause numbering restarts inside each annex, so `§3` alone
+names three different clauses in one lease.
+
+`page_from` / `page_to` are the location a human checks the citation against, and are why a
+chunk is traceable rather than merely attributed. A clause that runs across a page break keeps
+one chunk and two page numbers.
+
+`clause_ref` is **nullable, and null is honest**: a cover page, a preamble, a signature block
+and a table of contents have no clause number. A chunk that invented one would be a citation
+pointing at nothing, which is worse than a chunk that says where it is on the page and no more.
+
+### Splitting is by clause first and length second
+
+A clause becomes one chunk. A clause longer than the cap is split on its own sub-numbering,
+and each part keeps the parent's `clause_ref` with a part suffix — so an over-long §14 cites
+as `§14.1`, `§14.2` if it has sub-clauses, and `§14 (1/3)` if it does not. Length never
+silently decides where a citation points.
+
+### Idempotent by replacement — unlike a document
+
+11.2's finding was that `attachDocument` is *not* idempotent, because a re-upload is usually a
+correction and discarding it would lose the correction. Chunks are the opposite case: they are
+**derived** data with a natural key, `UNIQUE (document_id, ordinal)`. Re-ingesting the same
+document is the same document read again, so `ingestDocument` deletes that document's chunks
+and re-inserts them in one transaction. Either the whole re-read lands or none of it does; a
+half-replaced document — some clauses from this pass, some from the last — is the shape that
+would make a citation point at text no longer beside it.
+
+This is the one place in the module that deletes rows, and it is deliberate that it deletes
+only *derived* rows. Nothing a human wrote is removable here any more than it was in 11.2.
+
+### An incomplete lease says so
+
+Pages with no text layer are **counted and named**, never dropped. The reference note warns
+that a complete lease is not one file — two annexes say their content was emailed separately,
+and the handover protocol was blank — so ingestion must "expect an incomplete document and say
+so, rather than treating absence as 'no guarantee exists'".
+
+OCR for those pages is week 3's stated cut line (`ROADMAP.md`), logged as a manual-entry
+fallback. `ingestDocument` returns the page numbers it could not read, the admin screen shows
+them, and a later slice may fill them by hand or by OCR. What it must not do is return a lease
+that is quietly four pages shorter than the lease.
+
+### Extraction is the kernel's, clause vocabulary is this module's
+
+`PdfText` (`src/kernel/pdf.ts`) hands back positioned text items per page and knows nothing
+about leases — the same footing `objects.ts` stands on. `internal/clauses.ts` turns those items
+into chunks, and is pure: no clock, no pool, no store, as `roles.ts` and `paths.ts` are. The
+Hebrew that identifies a clause is domain vocabulary and lives here.
+
+The pure half is where the tests are, because it is where the failures are: RTL line assembly,
+the two-column pairing, an annex boundary, a page break inside a clause. Its fixtures are
+built to the *structure* the reference note documents, with invented content — no line of the
+real lease is copied into this repo.
+
+### Commands
+
+#### `ingestDocument({ documentId }, actor) → Ingestion`
+
+```
+{ documentId, tenancyId, chunks: number, pages: number, imageOnlyPages: number[] }
+```
+
+Unknown document → `not_found`. A row whose object has gone → `unavailable`, the same answer
+`readDocument` gives, never a document of zero chunks. A PDF that cannot be parsed at all →
+`invalid`, from the kernel adapter and not from a driver stack.
+
+Audited, with the document as its subject. **No chunk text reaches the audit row** — the row
+records that a document was ingested and how many clauses came out, which is what an operator
+needs and is not a second copy of a real contract in a second table.
+
+#### `listChunks(documentId) → Chunk[]`
+
+By `ordinal`. The verify read for this slice and the input to 13.1. Unaudited here, as this
+module's other reads are; `staff` audits its own use, exactly as it does for the document
+bytes.
+
+### Not triggered by upload, and that is recorded
+
+`attachDocument` does not ingest. The real lease was already in the bucket before this slice
+existed, so an ingest-an-existing-document path was needed regardless — and a 38-page
+extraction inside the upload request makes a browser wait on it for no gain. Auto-ingest on
+attach is deferred, not forgotten; it wants the kernel's durable work (`work.ts`), which is
+its own slice.
+
 ## Audited
 
 `openTenancy`, `addParty` and `endTenancy` are wrapped in the kernel's `audit.around`, so a
@@ -339,10 +465,18 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   nothing. Their callers audit their own use — as of 10.1 `staff` does exactly that, writing a
   row when an operator *opens* a unit and none when a list is rendered (`SPEC-staff.md`) — and
   a broader PII-read trail is a week-6 concern, the same position `identity` takes.
-- **A document is a file, not yet an answer.** Slice 11.2 stores and serves it; chunking
-  (12.1), embeddings scoped by occupancy (12.2) and the extracted twin (13.1) are the
-  slices that make it answerable. `tenancyAccess` is still the value that will scope the
-  retrieval, and nothing reads a document by anything but a staff session yet.
+- **A document is chunked, not yet retrievable.** Slice 11.2 stored and served it and 12.1
+  cut it into clauses; embeddings scoped by occupancy (12.2) and the extracted twin (13.1)
+  are the slices that make it answerable. `tenancyAccess` is still the value that will scope
+  the retrieval, and nothing reads a document or a chunk by anything but a staff session yet.
+- **Ingestion is manual and synchronous.** An operator presses a button and the request waits
+  on a 38-page extraction. Auto-ingest on attach wants the kernel's durable work (`work.ts`)
+  so an upload is not held open by it, and that is its own slice.
+- **A chunk's boundaries are a heuristic, not a parse.** `clauses.ts` reads numbering, annex
+  headers and column geometry; it does not understand the document. A lease laid out unlike
+  the tender's scheme will chunk worse, and the honest place to find that out is a second
+  real lease — which is why the reference note says to treat one sample's specifics as
+  unconfirmed.
 - **No rent, no money, ever.** SPEC.md rule 7. The lease's rent is an index-linked formula
   against a named base month, which is the week-3 twin's problem and never this module's.
 - **No "unconfirmed" party↔phone mapping.** The lease sample carries two tenants and two

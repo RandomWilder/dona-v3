@@ -3,6 +3,7 @@ import { type AuditLog, createAuditLog } from '../../kernel/audit.ts';
 import { systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import type {
+  ChunkRecord,
   DocumentRecord,
   OccupancyResolution,
   TenancyView,
@@ -33,6 +34,18 @@ export interface UnitDetail {
   // Empty for a vacant flat, because documents hang off the tenancy and a
   // vacancy has none. Metadata only -- the bytes are a second request.
   documents: DocumentRecord[];
+  // How many clauses each document was cut into, by document id. A document
+  // missing from this map has not been ingested, which is a different fact
+  // from a document that produced nothing (slice 12.1).
+  chunkCounts: Record<string, number>;
+}
+
+// What the chunks page shows: the place it was reached through, the document
+// it belongs to, and the clauses it was cut into.
+export interface DocumentChunks {
+  unit: UnitView;
+  document: DocumentRecord;
+  chunks: ChunkRecord[];
 }
 
 export interface PersonDetail {
@@ -55,6 +68,14 @@ export interface StaffQueries {
     documentId: string,
     session: Session,
   ): Promise<{ document: DocumentRecord; bytes: Buffer }>;
+  // Audited like the bytes are, and for the same reason: the chunks are the
+  // lease's own words, so opening them is the same privacy event as opening
+  // the PDF (slice 12.1).
+  getDocumentChunks(
+    unitId: string,
+    documentId: string,
+    session: Session,
+  ): Promise<DocumentChunks>;
   getPersonDetail(personId: string, session: Session): Promise<PersonDetail>;
 }
 
@@ -127,13 +148,39 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         const documents = tenancy
           ? await deps.occupancy.listDocuments(tenancy.tenancy.id)
           : [];
-        return { unit, tenancy, people, documents };
+        const chunkCounts = tenancy
+          ? await deps.occupancy.countChunks(tenancy.tenancy.id)
+          : {};
+        return { unit, tenancy, people, documents, chunkCounts };
       }),
 
     getDocument: (documentId, session) =>
       guardAudited('getDocument', documentId, session, () =>
         deps.occupancy.readDocument(documentId),
       ),
+
+    getDocumentChunks: (unitId, documentId, session) =>
+      guardAudited('getDocumentChunks', documentId, session, async () => {
+        const unit = await deps.portfolio.getUnit(unitId);
+        // The document has to be this unit's, checked here rather than assumed
+        // from the URL: a pair of ids in a link is a caller-supplied claim, and
+        // 11.2's rule is that the tenancy a document hangs off is resolved on
+        // the server. This is that rule read from the other direction.
+        const tenancy = await deps.occupancy.findCurrentTenancy(unitId);
+        const document = tenancy
+          ? (await deps.occupancy.listDocuments(tenancy.tenancy.id)).find(
+              (row) => row.id === documentId,
+            )
+          : undefined;
+        if (!document) {
+          throw new KernelError('not_found', 'document not found');
+        }
+        return {
+          unit,
+          document,
+          chunks: await deps.occupancy.listChunks(document.id),
+        };
+      }),
 
     getPersonDetail: (personId, session) =>
       guardAudited('getPersonDetail', personId, session, async () => {

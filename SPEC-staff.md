@@ -226,6 +226,49 @@ Serves the bytes back with `content-disposition: inline`, `no-store` and `nosnif
 headers every authenticated page carries. The document id is the only thing in the URL, and
 it names no person.
 
+## Ingesting a document (slice 12.1)
+
+The button that turns a stored lease into clauses, and a screen to read what came out. It
+adds no new access rule either, for the third time: the ingest POST is `mutate`, so a viewer
+is refused by the same guard, and the chunks page is `read` **and audited** — the chunks are
+the lease's own words, so opening them is the same privacy event as opening the PDF and
+leaves the same kind of row.
+
+Both routes hang off the unit:
+
+```
+POST /admin/units/:unitId/documents/:documentId/ingest
+GET  /admin/units/:unitId/documents/:documentId/chunks
+```
+
+and both **check server-side that the document belongs to that unit's current tenancy**,
+answering `not_found` when it does not. That is 11.2's rule read from the other direction:
+there, the tenancy a document is filed under is resolved from the unit rather than accepted
+from the browser; here, a document reached *through* a unit has to actually be that unit's.
+A pair of ids in a URL is a caller-supplied claim, and the check is what makes it a fact.
+
+### Why a button and not a step of the upload
+
+The lease this system reads was already in the bucket before ingestion existed, so a path
+that ingests an *existing* document was needed regardless. Doing it on upload as well would
+hold the browser open for the length of a 38-page extraction, for no gain the operator can
+see. Ingestion on attach wants the kernel's durable work and is its own slice
+(`SPEC-occupancy.md`, "Not triggered by upload").
+
+The consequence is stated rather than hidden: **a document sits un-ingested until someone
+presses the button**, and the unit page says which documents have been read and which have
+not, because "no clauses" and "not read yet" are different facts.
+
+### What the result page shows
+
+Clause reference, pages, and the text — in reading order, one card per chunk. It is a
+verification surface first: the slice's acceptance bar is that a human can spot-read chunks
+against the PDF, and this is where that is done. It is deliberately plain.
+
+It also shows **the pages that carried no text layer**, named. That is the honest half of
+week 3's OCR cut line: a lease with four image-only pages is four pages incomplete, and an
+operator reading an answer from it should be able to know that.
+
 ## The views (slice 10.1)
 
 ROADMAP week 2's last bar: *the pilot building is browsable on staging*. `נכסים` and `אנשים`

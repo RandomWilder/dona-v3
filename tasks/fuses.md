@@ -56,6 +56,18 @@ environment.
 **Removal is owed at phase-1 sign-off** — from `gs://dona-v3-staging-docs` and
 `gs://dona-v3-prod-docs` both. This line exists so it cannot drift past that.
 
+**And from Postgres, as of slice 12.1.** The contract is no longer only in the buckets: the
+`occupancy_documents` row indexes it, and `occupancy_document_chunks` now holds **its clause
+text**, extracted from the PDF and stored verbatim. Deleting the objects would leave the lease
+readable in the database. The removal owed at sign-off is therefore three things, and a
+deletion path (week 6) has to know about all three:
+
+```
+gs://dona-v3-staging-docs   the object
+gs://dona-v3-prod-docs      the object
+occupancy_documents         + occupancy_document_chunks   the row and the clause text
+```
+
 ### Original request (history)
 - Fired: 2026-08-22 ✅
 - Status: **sent and acknowledged** — Dona Dom confirmed a set of all relevant documents will be sent, organized **by apartment**, phone numbers included.
