@@ -5,6 +5,7 @@ import { buildApp } from '../../app.ts';
 import { createIdentity } from '../../identity/contract.ts';
 import { newId } from '../../kernel/ids.ts';
 import { createMemoryStore } from '../../kernel/objects.ts';
+import { samplePdf } from '../../kernel/pdf-sample.ts';
 import { migratedPoolOrNull, skipReason } from '../../kernel/pg-support.ts';
 import { type Actor, createOccupancy } from '../../occupancy/contract.ts';
 import { createPortfolio } from '../../portfolio/contract.ts';
@@ -262,6 +263,235 @@ describe('lease documents at the edge', () => {
       const read = await app.inject({
         method: 'GET',
         url: `/admin/documents/${newId()}`,
+      });
+      assert.equal(read.headers.location, '/admin/login');
+    });
+  });
+});
+
+// Slice 12.1 at the same edge: the button that reads a stored lease into
+// clauses, and the page that shows what came out. The reader here is the real
+// one -- `samplePdf` writes a PDF that pdfjs opens -- so this is the only test
+// that runs upload, extraction, chunking and the screen in one pass.
+describe('lease chunks at the edge', () => {
+  const lease = () =>
+    samplePdf([
+      [
+        { x: 120, y: 760, text: '1. The flat is let unfurnished.' },
+        // The two-column annex row, mirrored: this fixture is Latin and so
+        // reads left to right, which puts the label on the left where the
+        // Hebrew document puts it on the right. Same row, same pairing.
+        { x: 120, y: 700, text: 'Term' },
+        { x: 380, y: 700, text: '24 months' },
+      ],
+      [{ x: 120, y: 760, text: '2. Rent is payable monthly in advance.' }],
+    ]);
+
+  async function uploaded(
+    app: ReturnType<typeof buildApp>,
+    cookie: string,
+    unitId: string,
+  ): Promise<void> {
+    await app.inject({
+      method: 'POST',
+      url: `/admin/units/${unitId}/documents`,
+      headers: {
+        cookie,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: multipartUpload(lease()),
+    });
+  }
+
+  it('reads a stored lease into clauses and shows them', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '12.1-test',
+        store: createMemoryStore(),
+      });
+      const cookie = await loginAs(pool, app, 'admin');
+      const place = await seedPlace(pool);
+      await uploaded(app, cookie, place.unit.id);
+
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [place.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+
+      // Before the button is pressed, the unit page says so -- "not read yet"
+      // and "read, and produced nothing" are different facts.
+      const before = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.unit.id}`,
+        headers: { cookie },
+      });
+      assert.ok(before.body.includes('טרם נקרא'));
+
+      const ingested = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/ingest`,
+        headers: {
+          cookie,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: '',
+      });
+      assert.equal(ingested.statusCode, 302);
+      assert.equal(ingested.headers.location, `/admin/units/${place.unit.id}`);
+
+      const chunks = await pool.query<{
+        clause_ref: string | null;
+        page_from: number;
+        tenancy_id: string;
+      }>(
+        `SELECT clause_ref, page_from, tenancy_id FROM occupancy_document_chunks
+          WHERE document_id = $1 ORDER BY ordinal`,
+        [documentId],
+      );
+      assert.deepEqual(
+        chunks.rows.map((chunk) => chunk.clause_ref),
+        ['§1', '§2'],
+      );
+      // The isolation column, carried down from the document row.
+      for (const chunk of chunks.rows) {
+        assert.equal(chunk.tenancy_id, place.tenancy.id);
+      }
+      assert.equal(chunks.rows[1]?.page_from, 2);
+
+      const page = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/chunks`,
+        headers: { cookie },
+      });
+      assert.equal(page.statusCode, 200);
+      assert.ok(page.body.includes('§1'));
+      assert.ok(page.body.includes('unfurnished'));
+      // The two-column row is bound to its label on the way through, which is
+      // the failure the whole slice is shaped around.
+      assert.ok(page.body.includes('Term: 24 months'));
+
+      // And the unit page now counts them.
+      const after = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.unit.id}`,
+        headers: { cookie },
+      });
+      assert.ok(after.body.includes('סעיפים'));
+      assert.ok(!after.body.includes('טרם נקרא'));
+    });
+  });
+
+  it('refuses a viewer the button, and leaves the refusal on the record', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '12.1-test',
+        store: createMemoryStore(),
+      });
+      const admin = await loginAs(pool, app, 'admin');
+      const place = await seedPlace(pool);
+      await uploaded(app, admin, place.unit.id);
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [place.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+
+      const viewer = await loginAs(pool, app, 'viewer');
+      const refused = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/ingest`,
+        headers: {
+          cookie: viewer,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: '',
+      });
+      assert.equal(refused.statusCode, 302);
+      assert.match(refused.headers.location as string, /error=not_allowed/);
+
+      const written = await pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM occupancy_document_chunks WHERE document_id = $1',
+        [documentId],
+      );
+      assert.equal(written.rows[0]?.n, 0);
+      const audited = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM audit_log
+          WHERE action = 'staff.ingestDocument' AND outcome = 'error'
+            AND error_code = 'not_allowed'`,
+      );
+      assert.ok((audited.rows[0]?.n ?? 0) > 0);
+
+      // A viewer may still read what an operator produced -- the button is the
+      // write, and this page is a read -- but it is offered no button.
+      const page = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.unit.id}`,
+        headers: { cookie: viewer },
+      });
+      assert.ok(!page.body.includes('/ingest'));
+    });
+  });
+
+  it('refuses a document that is not this unit’s, through either route', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '12.1-test',
+        store: createMemoryStore(),
+      });
+      const cookie = await loginAs(pool, app, 'admin');
+      const mine = await seedPlace(pool);
+      const theirs = await seedPlace(pool);
+      await uploaded(app, cookie, theirs.unit.id);
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [theirs.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+
+      // A pair of ids in a URL is a caller-supplied claim. 11.2 resolves the
+      // tenancy from the unit rather than trusting the browser; this is the
+      // same rule where the browser supplies both.
+      const posted = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${mine.unit.id}/documents/${documentId}/ingest`,
+        headers: {
+          cookie,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: '',
+      });
+      assert.match(posted.headers.location as string, /error=not_found/);
+
+      const read = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${mine.unit.id}/documents/${documentId}/chunks`,
+        headers: { cookie },
+      });
+      assert.equal(read.statusCode, 404);
+
+      const written = await pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM occupancy_document_chunks WHERE document_id = $1',
+        [documentId],
+      );
+      assert.equal(written.rows[0]?.n, 0);
+    });
+  });
+
+  it('sends a logged-out browser to the login page', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '12.1-test',
+        store: createMemoryStore(),
+      });
+      const place = await seedPlace(pool);
+      const read = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.unit.id}/documents/${newId()}/chunks`,
       });
       assert.equal(read.headers.location, '/admin/login');
     });

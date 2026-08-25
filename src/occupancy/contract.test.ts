@@ -6,6 +6,7 @@ import { type Clock, fixedClock } from '../kernel/clock.ts';
 import type { KernelError } from '../kernel/errors.ts';
 import { newId } from '../kernel/ids.ts';
 import { createMemoryStore, type ObjectStore } from '../kernel/objects.ts';
+import type { PdfPage, PdfText } from '../kernel/pdf.ts';
 import { migratedPoolOrNull, skipReason } from '../kernel/pg-support.ts';
 import { createPortfolio } from '../portfolio/contract.ts';
 import { type Actor, createOccupancy } from './contract.ts';
@@ -51,7 +52,7 @@ async function withPool(
 
 // The three modules as one caller sees them, on one clock. The document store
 // is in memory: no test reaches the network, and none needs a bucket.
-function world(pool: Pool, clock?: Clock, store?: ObjectStore) {
+function world(pool: Pool, clock?: Clock, store?: ObjectStore, pdf?: PdfText) {
   const identity = createIdentity({ pool, clock });
   const portfolio = createPortfolio({ pool, clock });
   const occupancy = createOccupancy({
@@ -60,8 +61,38 @@ function world(pool: Pool, clock?: Clock, store?: ObjectStore) {
     identity,
     portfolio,
     store: store ?? createMemoryStore(),
+    pdf: pdf ?? emptyPdf,
   });
   return { identity, portfolio, occupancy };
+}
+
+// A reader that hands back pages the test wrote, so no contract test opens a
+// real PDF: what pdfjs does with bytes is pinned in src/kernel/pdf.test.ts, and
+// what clause detection does with pages in internal/clauses.test.ts. What is
+// left for this file is the command around them.
+function pdfOf(pages: PdfPage[]): PdfText {
+  return { pages: async () => pages, describe: () => 'fake' };
+}
+
+const emptyPdf: PdfText = pdfOf([]);
+
+// One right-aligned Hebrew line on a page, in the top-down coordinates the
+// kernel adapter produces.
+function pdfPage(number: number, lines: string[]): PdfPage {
+  return {
+    number,
+    width: 595,
+    height: 842,
+    items: lines.map((text, index) => ({
+      text,
+      x: 150,
+      y: 60 + index * 20,
+      width: 340,
+      height: 11,
+      rightToLeft: true,
+      endsLine: true,
+    })),
+  };
 }
 
 // One person with one phone, in one call.
@@ -787,9 +818,9 @@ describe('occupancy contract', () => {
   // Slice 11.2. A document belongs to a tenancy, and the whole point of the
   // table is that it belongs to nothing else.
   describe('lease documents', () => {
-    async function tenancyFor(pool: Pool, store?: ObjectStore) {
+    async function tenancyFor(pool: Pool, store?: ObjectStore, pdf?: PdfText) {
       const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
-      const world_ = world(pool, clock, store);
+      const world_ = world(pool, clock, store, pdf);
       const building = await world_.portfolio.addBuilding(
         uniqueAddress(),
         actor,
@@ -971,6 +1002,203 @@ describe('occupancy contract', () => {
           withEmptyStore.readDocument(document.id),
           (error: KernelError) => error.code === 'not_found',
         );
+      });
+    });
+  });
+
+  describe('lease chunks', () => {
+    async function tenancyFor(pool: Pool, pdf: PdfText, store?: ObjectStore) {
+      const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+      const shared = store ?? createMemoryStore();
+      const world_ = world(pool, clock, shared, pdf);
+      const building = await world_.portfolio.addBuilding(
+        uniqueAddress(),
+        actor,
+      );
+      const unit = await world_.portfolio.addUnit(
+        { buildingId: building.id, label: '24', floor: 2 },
+        actor,
+      );
+      const tenancy = await world_.occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-01-01' },
+        actor,
+      );
+      const document = await world_.occupancy.attachDocument(
+        {
+          tenancyId: tenancy.id,
+          kind: 'lease',
+          contentType: 'application/pdf',
+          bytes: Buffer.from('%PDF-1.7\nthe signed lease\n%%EOF'),
+        },
+        actor,
+      );
+      return { ...world_, store: shared, unit, tenancy, document };
+    }
+
+    const lease = [
+      pdfPage(1, [
+        'נספח א׳ — פרטי העסקה',
+        '3. תקופת השכירות היא 24 חודשים מיום המסירה.',
+      ]),
+      pdfPage(2, ['4. דמי השכירות ישולמו בכל 1 לחודש קלנדרי.']),
+    ];
+
+    it('cuts a document into clauses, each carrying its tenancy', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, tenancy, document } = await tenancyFor(
+          pool,
+          pdfOf(lease),
+        );
+
+        const ingestion = await occupancy.ingestDocument(
+          { documentId: document.id },
+          actor,
+        );
+        assert.equal(ingestion.tenancyId, tenancy.id);
+        assert.equal(ingestion.pages, 2);
+        assert.equal(ingestion.chunks, 3);
+        assert.deepEqual(ingestion.imageOnlyPages, []);
+
+        const chunks = await occupancy.listChunks(document.id);
+        assert.deepEqual(
+          chunks.map((chunk) => chunk.ordinal),
+          [0, 1, 2],
+        );
+        assert.deepEqual(
+          chunks.map((chunk) => chunk.clauseRef),
+          ['נספח א׳', 'נספח א׳ §3', 'נספח א׳ §4'],
+        );
+        // The column slice 12.2's every retrieval query filters on. It is
+        // copied from the document row and never taken from a caller, which is
+        // the whole reason it is a column here rather than a join away.
+        for (const chunk of chunks) {
+          assert.equal(chunk.tenancyId, tenancy.id);
+          assert.equal(chunk.documentId, document.id);
+        }
+        // The page a human turns to when checking the citation.
+        assert.equal(chunks[2]?.pageFrom, 2);
+      });
+    });
+
+    it('replaces on a second pass rather than filing a second copy', async (t) => {
+      await withPool(t, async (pool) => {
+        const store = createMemoryStore();
+        const { occupancy, document } = await tenancyFor(
+          pool,
+          pdfOf(lease),
+          store,
+        );
+        await occupancy.ingestDocument({ documentId: document.id }, actor);
+
+        // The same document read again — by a better reader, which is what a
+        // re-ingest is for. Chunks are derived data with a natural key, unlike
+        // a document, whose second upload is a correction and is kept (11.2).
+        const { occupancy: reread } = world(
+          pool,
+          fixedClock(new Date('2026-09-16T09:00:00Z')),
+          store,
+          pdfOf([...lease, pdfPage(3, ['5. הודעה מוקדמת של 60 יום.'])]),
+        );
+        const again = await reread.ingestDocument(
+          { documentId: document.id },
+          actor,
+        );
+
+        assert.equal(again.chunks, 4);
+        const chunks = await reread.listChunks(document.id);
+        assert.equal(chunks.length, 4);
+        assert.deepEqual(
+          chunks.map((chunk) => chunk.ordinal),
+          [0, 1, 2, 3],
+        );
+        assert.match(chunks[3]?.text ?? '', /60 יום/);
+      });
+    });
+
+    it('names the pages it could not read', async (t) => {
+      await withPool(t, async (pool) => {
+        // Four pages of the real lease are images. Ingestion that dropped them
+        // silently would return a lease four pages shorter than the lease —
+        // OCR is week 3's stated cut line, so saying so is the whole answer.
+        const { occupancy, document } = await tenancyFor(
+          pool,
+          pdfOf([
+            pdfPage(1, ['1. מבוא.']),
+            { number: 2, width: 595, height: 842, items: [] },
+            { number: 3, width: 595, height: 842, items: [] },
+          ]),
+        );
+        const ingestion = await occupancy.ingestDocument(
+          { documentId: document.id },
+          actor,
+        );
+        assert.deepEqual(ingestion.imageOnlyPages, [2, 3]);
+        assert.equal(ingestion.pages, 3);
+        assert.equal(ingestion.chunks, 1);
+      });
+    });
+
+    it('refuses a document id it never issued', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy } = await tenancyFor(pool, pdfOf(lease));
+        await assert.rejects(
+          occupancy.ingestDocument({ documentId: newId() }, actor),
+          (error: KernelError) => error.code === 'not_found',
+        );
+      });
+    });
+
+    it('reports a gone object instead of a lease with nothing in it', async (t) => {
+      await withPool(t, async (pool) => {
+        const { document } = await tenancyFor(pool, pdfOf(lease));
+        // A second store stands for the object having gone: the row is intact
+        // and the bytes are not. Zero chunks would read as a lease that says
+        // nothing, which is the one answer that must not be possible.
+        const { occupancy: withEmptyStore } = world(
+          pool,
+          undefined,
+          createMemoryStore(),
+          pdfOf(lease),
+        );
+        await assert.rejects(
+          withEmptyStore.ingestDocument({ documentId: document.id }, actor),
+          (error: KernelError) => error.code === 'not_found',
+        );
+        assert.deepEqual(await withEmptyStore.listChunks(document.id), []);
+      });
+    });
+
+    it('audits the run without copying the lease into the audit row', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, document } = await tenancyFor(pool, pdfOf(lease));
+        await occupancy.ingestDocument({ documentId: document.id }, actor);
+        await occupancy
+          .ingestDocument({ documentId: newId() }, actor)
+          .catch(() => {});
+
+        const rows = await pool.query<{
+          outcome: string;
+          error_code: string | null;
+          inputs: Record<string, unknown>;
+        }>(
+          `SELECT outcome, error_code, inputs FROM audit_log
+            WHERE action = 'occupancy.ingestDocument' AND subject_id = $1`,
+          [document.id],
+        );
+        assert.deepEqual(
+          rows.rows.map((row) => `${row.outcome} ${row.error_code ?? '-'}`),
+          ['ok -'],
+        );
+        // The document, and nothing out of it: the clause text is a verbatim
+        // copy of a real contract, and a copy in audit_log would be one more
+        // place it has to be deleted from at sign-off (tasks/fuses.md).
+        assert.deepEqual(rows.rows[0]?.inputs, { documentId: document.id });
+
+        const failed = await pool.query<{ error_code: string | null }>(
+          `SELECT error_code FROM audit_log
+            WHERE action = 'occupancy.ingestDocument' AND outcome = 'error'`,
+        );
+        assert.ok(failed.rows.some((row) => row.error_code === 'not_found'));
       });
     });
   });

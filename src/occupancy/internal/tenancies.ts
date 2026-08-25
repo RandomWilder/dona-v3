@@ -13,6 +13,7 @@ import { type Clock, systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
+import { createPdfjsText, type PdfText } from '../../kernel/pdf.ts';
 import { asText, optionalText, validId } from '../../kernel/validate.ts';
 import {
   createPortfolio,
@@ -22,10 +23,13 @@ import {
 import { optionalDate, validDate } from './dates.ts';
 import {
   type AttachDocumentInput,
+  type ChunkRecord,
   createDocuments,
   createUnconfiguredStore,
   type DocumentRecord,
   type Documents,
+  type IngestDocumentInput,
+  type Ingestion,
 } from './documents.ts';
 import {
   type OccupancyRole,
@@ -130,6 +134,13 @@ export interface Occupancy {
   readDocument(
     documentId: string,
   ): Promise<{ document: DocumentRecord; bytes: Buffer }>;
+  // Slice 12.1: the document, cut into the clauses a citation can name. Not a
+  // side effect of attaching one — the lease this system reads was in the
+  // bucket before this command existed, and a 38-page extraction inside an
+  // upload request would hold a browser open for no gain.
+  ingestDocument(input: IngestDocumentInput, actor: Actor): Promise<Ingestion>;
+  listChunks(documentId: string): Promise<ChunkRecord[]>;
+  countChunks(tenancyId: string): Promise<Record<string, number>>;
 }
 
 export interface OccupancyDeps {
@@ -144,6 +155,9 @@ export interface OccupancyDeps {
   // one that remembers: a process that forgot to configure one must not accept
   // a signed contract and quietly drop it.
   store?: ObjectStore;
+  // How a PDF becomes positioned text. Injected like the store, so a test can
+  // hand over pages it wrote itself and never open a real file.
+  pdf?: PdfText;
 }
 
 interface TenancyRow {
@@ -172,6 +186,10 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     audit,
     portfolio,
     store: deps.store ?? createUnconfiguredStore(),
+    // Unlike the store, the default here is the real reader rather than one
+    // that refuses: pdfjs needs no bucket, no credential and no configuration,
+    // so there is no such thing as a process that forgot to set it up.
+    pdf: deps.pdf ?? createPdfjsText(),
   });
 
   // The whole view for one tenancy. Both entry points into it — by tenancy id
@@ -448,6 +466,9 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     attachDocument: (input, actor) => documents.attachDocument(input, actor),
     listDocuments: (tenancyId) => documents.listDocuments(tenancyId),
     readDocument: (documentId) => documents.readDocument(documentId),
+    ingestDocument: (input, actor) => documents.ingestDocument(input, actor),
+    listChunks: (documentId) => documents.listChunks(documentId),
+    countChunks: (tenancyId) => documents.countChunks(tenancyId),
   };
 }
 

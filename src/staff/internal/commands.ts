@@ -13,6 +13,8 @@ import type {
   AttachDocumentInput,
   DocumentRecord,
   EndTenancyInput,
+  IngestDocumentInput,
+  Ingestion,
   Occupancy,
   OpenTenancyInput,
   Party,
@@ -59,13 +61,19 @@ export interface StaffCommands {
     input: AttachDocumentInput,
     session: Session,
   ): Promise<DocumentRecord>;
+  // Slice 12.1. `mutate` like every other write, and no new rule: reading a
+  // document into clauses writes rows, so a viewer may not do it.
+  ingestDocument(
+    input: IngestDocumentInput,
+    session: Session,
+  ): Promise<Ingestion>;
 }
 
 export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
   const clock = deps.clock ?? systemClock;
   const audit = deps.audit ?? createAuditLog(deps.pool, clock);
 
-  // One shape for all nine. The capability check runs *inside* the audited
+  // One shape for all ten. The capability check runs *inside* the audited
   // work, so a refusal leaves an `error` row with code not_allowed rather than
   // no row at all — the pattern identity established for rejected commands —
   // and it runs *before* the module is reached, so a viewer never touches
@@ -130,6 +138,10 @@ export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
     attachDocument: (input, session) =>
       guard('attachDocument', 'mutate', session, (actor) =>
         deps.occupancy.attachDocument(input, actor),
+      ),
+    ingestDocument: (input, session) =>
+      guard('ingestDocument', 'mutate', session, (actor) =>
+        deps.occupancy.ingestDocument(input, actor),
       ),
   };
 }

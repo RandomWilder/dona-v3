@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Person } from '../../identity/contract.ts';
 import type { Building } from '../../portfolio/contract.ts';
-import type { UnitDetail } from '../internal/queries.ts';
+import type { DocumentChunks, UnitDetail } from '../internal/queries.ts';
 import type { StaffRole } from '../internal/roles.ts';
-import { buildingsPage, unitPage } from './views.ts';
+import { buildingsPage, chunksPage, unitPage } from './views.ts';
 
 // Pure rendering, no database. What these prove is the two properties the pages
 // must hold no matter what the modules returned: nothing from the data can
@@ -89,6 +89,7 @@ describe('admin views', () => {
       tenancy: null,
       people: [],
       documents: [],
+      chunkCounts: {},
     };
     const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('דוד'));
@@ -110,6 +111,7 @@ describe('admin views', () => {
       tenancy: null,
       people: [],
       documents: [],
+      chunkCounts: {},
     };
     const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('הדירה פנויה'));
@@ -165,6 +167,7 @@ describe('admin views', () => {
       },
       people: [known],
       documents: [],
+      chunkCounts: {},
     };
     const page = unitPage(detail, context('admin')).value;
     assert.ok(page.includes('דנה כהן'));
@@ -173,4 +176,65 @@ describe('admin views', () => {
     assert.ok(page.includes('ללא מועד סיום'));
     assert.ok(!page.includes('null'));
   });
+  it('keeps a clause number from reading backwards in a Hebrew page', () => {
+    // `נספח א׳ §3.1–3.3` is Hebrew followed by a range whose dash and digits
+    // are bidi-neutral: laid out in the page's direction it renders as
+    // §3.3–3.1, which is a citation pointing somewhere else.
+    const page = chunksPage(
+      chunkDetail('נספח א׳ §3.1–3.3'),
+      context('admin'),
+    ).value;
+    assert.ok(page.includes('<span dir="ltr">§3.1–3.3</span>'));
+    assert.ok(page.includes('נספח א׳'));
+  });
+
+  it('says a document has not been read rather than showing an empty page', () => {
+    const detail = chunkDetail('§1');
+    const page = chunksPage({ ...detail, chunks: [] }, context('admin')).value;
+    assert.ok(page.includes('טרם נקרא'));
+  });
+
+  it('marks a chunk with no clause number instead of inventing one', () => {
+    const detail = chunkDetail('§1');
+    const chunk = detail.chunks[0];
+    const page = chunksPage(
+      { ...detail, chunks: [{ ...chunk, clauseRef: null }] },
+      context('admin'),
+    ).value;
+    assert.ok(page.includes('ללא מספור'));
+  });
 });
+
+// One document's chunks, for the chunks page.
+function chunkDetail(clauseRef: string): DocumentChunks {
+  return {
+    unit: {
+      unit: { id: 'u1', buildingId: 'b1', label: '5', floor: 2 },
+      building: building({}),
+      assets: [],
+    },
+    document: {
+      id: 'd1',
+      tenancyId: 't1',
+      kind: 'lease',
+      objectPath: 'leases/…',
+      contentType: 'application/pdf',
+      byteSize: 1024,
+      createdAt: '2026-08-25T09:00:00.000Z',
+    },
+    chunks: [
+      {
+        id: 'c1',
+        documentId: 'd1',
+        tenancyId: 't1',
+        ordinal: 0,
+        clauseRef,
+        heading: null,
+        pageFrom: 14,
+        pageTo: 15,
+        text: 'השוכר ישלם את דמי השכירות מראש.',
+        createdAt: '2026-08-25T09:00:00.000Z',
+      },
+    ],
+  };
+}

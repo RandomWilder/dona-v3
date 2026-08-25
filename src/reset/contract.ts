@@ -44,6 +44,11 @@ export const truncatedTables = [
   'occupancy_tenancies',
   'occupancy_parties',
   'occupancy_documents',
+  // Slice 12.1. The clause text a document was cut into, and so a verbatim copy
+  // of a real contract in a second place -- it goes when the document goes.
+  // Both are in one TRUNCATE statement, which is what lets the chunk table's
+  // ON DELETE RESTRICT stand without making a reset impossible.
+  'occupancy_document_chunks',
   'idempotency_keys',
 ] as const;
 

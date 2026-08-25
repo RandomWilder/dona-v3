@@ -60,6 +60,31 @@ start — so it falls back to memory and *says so*. A deployed revision whose bo
 
 A missing object is `not_found`, never empty bytes.
 
+## PDF text (`pdf.ts`, slice 12.1)
+
+`pages(bytes)` → one entry per page, each carrying its size and its **positioned** text
+items. Infrastructure on the same footing as `objects.ts`: it holds the shape of a document
+and no business logic — it does not know what a lease or a clause is, and the module that
+does (`SPEC-occupancy.md`) turns these items into chunks.
+
+**Positions, not a string.** A reader that returns page text as a paragraph is unusable for
+the document this system exists to read: the lease's facts live in a two-column label/value
+annex, and flattened text binds each value to the label on the line above. `getTextContent()`
+gives every item an x/y transform, a width and a bidi direction, which is what makes both the
+column pairing and a traceable citation possible.
+
+`createPdfjsText()` wraps Mozilla's `pdfjs-dist` — the one runtime dependency this slice
+added, and the reason is the paragraph above. It is imported lazily, so a process that never
+reads a PDF never pays for it. The input is a third-party PDF, and a PDF is a program, so
+nothing here renders: `useSystemFonts: false` and `disableFontFace: true`, because text
+extraction needs no glyph built at runtime. (pdfjs's `isEvalSupported` switch, the obvious
+thing to reach for, no longer exists in v6 — eval-based font compilation was removed from the
+library outright, which is the stronger version of setting it.)
+
+A file that is not a PDF, or is one the parser cannot open, is `invalid` — never a driver
+stack. A page with no text layer is **not** an error: it comes back with zero items, and
+saying which pages those were is the caller's job (week 3's OCR cut line).
+
 ## Idempotency (`idempotency.ts`)
 
 `once<T>(key, work)` — the key is the caller's business intent (job id, offer id), never a random value.

@@ -1,11 +1,13 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { ActorKind, AuditLog } from '../../kernel/audit.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
+import type { PdfText } from '../../kernel/pdf.ts';
 import { asText, validId } from '../../kernel/validate.ts';
 import type { Portfolio } from '../../portfolio/contract.ts';
+import { chunkLease, type LeaseChunk } from './clauses.ts';
 import { documentPath } from './paths.ts';
 
 // Lease documents, indexed per occupancy. See SPEC-occupancy.md, "Lease
@@ -60,6 +62,40 @@ export interface Documents {
   readDocument(
     documentId: string,
   ): Promise<{ document: DocumentRecord; bytes: Buffer }>;
+  ingestDocument(
+    input: IngestDocumentInput,
+    actor: DocumentActor,
+  ): Promise<Ingestion>;
+  listChunks(documentId: string): Promise<ChunkRecord[]>;
+  countChunks(tenancyId: string): Promise<Record<string, number>>;
+}
+
+export interface IngestDocumentInput {
+  documentId: string;
+}
+
+// What one pass over a document produced. The counts are the answer an operator
+// gets on the screen, and `imageOnlyPages` is the part that keeps an incomplete
+// lease honest -- see SPEC-occupancy.md, "An incomplete lease says so".
+export interface Ingestion {
+  documentId: string;
+  tenancyId: string;
+  chunks: number;
+  pages: number;
+  imageOnlyPages: number[];
+}
+
+export interface ChunkRecord {
+  id: string;
+  documentId: string;
+  tenancyId: string;
+  ordinal: number;
+  clauseRef: string | null;
+  heading: string | null;
+  pageFrom: number;
+  pageTo: number;
+  text: string;
+  createdAt: string;
 }
 
 export interface DocumentDeps {
@@ -68,6 +104,7 @@ export interface DocumentDeps {
   audit: AuditLog;
   portfolio: Portfolio;
   store: ObjectStore;
+  pdf: PdfText;
 }
 
 // The default when nothing wired a store. It throws rather than remembering, so
@@ -96,6 +133,22 @@ interface DocumentRow {
 }
 
 const columns = `id, tenancy_id, kind, object_path, content_type, byte_size, created_at`;
+
+interface ChunkRow {
+  id: string;
+  document_id: string;
+  tenancy_id: string;
+  ordinal: number;
+  clause_ref: string | null;
+  heading: string | null;
+  page_from: number;
+  page_to: number;
+  text: string;
+  created_at: Date;
+}
+
+const chunkColumns = `id, document_id, tenancy_id, ordinal, clause_ref, heading,
+  page_from, page_to, text, created_at`;
 
 export function validDocumentKind(
   value: unknown,
@@ -228,7 +281,142 @@ export function createDocuments(deps: DocumentDeps): Documents {
       const object = await store.read(document.objectPath);
       return { document, bytes: object.bytes };
     },
+
+    async ingestDocument(input, actor) {
+      return audit.around(
+        {
+          actorKind: actor.kind,
+          actorId: actor.id,
+          action: 'occupancy.ingestDocument',
+          subjectId: asText(input?.documentId),
+          // The document, and nothing out of it. The clause text is a verbatim
+          // copy of a real contract, and a copy of it in audit_log would be a
+          // second place it has to be deleted from at sign-off (tasks/fuses.md)
+          // for no answer this row is asked to give.
+          inputs: { documentId: asText(input?.documentId) },
+        },
+        async () => {
+          const documentId = validId(input?.documentId, 'documentId');
+          const found = await pool.query<DocumentRow>(
+            `SELECT ${columns} FROM occupancy_documents WHERE id = $1`,
+            [documentId],
+          );
+          const row = found.rows[0];
+          if (!row) {
+            throw new KernelError('not_found', 'document not found');
+          }
+          const document = toDocument(row);
+          // The same answer readDocument gives for a row whose object has gone,
+          // and for the same reason: a document of zero chunks would look like
+          // a lease with nothing in it rather than a lease that is missing.
+          const object = await store.read(document.objectPath);
+
+          // `invalid` for a file that will not open, from the kernel adapter.
+          const pages = await deps.pdf.pages(object.bytes);
+          const { chunks, imageOnlyPages } = chunkLease(pages);
+
+          await replaceChunks(document, chunks);
+
+          return {
+            documentId: document.id,
+            // Copied from the document row and never taken from a caller. It is
+            // the column every retrieval query in 12.2 filters on.
+            tenancyId: document.tenancyId,
+            chunks: chunks.length,
+            pages: pages.length,
+            imageOnlyPages,
+          };
+        },
+      );
+    },
+
+    // How many clauses each of a tenancy's documents was cut into -- so the
+    // unit page can say which documents have been read and which have not,
+    // which are different facts and look identical without this. Filtered by
+    // tenancy_id: the same column every retrieval query in 12.2 filters on.
+    async countChunks(tenancyId) {
+      const id = validId(tenancyId, 'tenancyId');
+      const found = await pool.query<{ document_id: string; count: string }>(
+        `SELECT document_id, count(*) AS count
+           FROM occupancy_document_chunks
+          WHERE tenancy_id = $1
+          GROUP BY document_id`,
+        [id],
+      );
+      const counts: Record<string, number> = {};
+      for (const row of found.rows) {
+        counts[row.document_id] = Number(row.count);
+      }
+      return counts;
+    },
+
+    async listChunks(documentId) {
+      const id = validId(documentId, 'documentId');
+      const found = await pool.query<ChunkRow>(
+        `SELECT ${chunkColumns} FROM occupancy_document_chunks
+          WHERE document_id = $1
+          ORDER BY ordinal`,
+        [id],
+      );
+      return found.rows.map(toChunk);
+    },
   };
+
+  // Delete then insert, in one transaction. Chunks are *derived* data with a
+  // natural key -- unlike a document, whose re-upload is a correction (11.2) --
+  // so re-reading one document is a replacement rather than a second copy.
+  // Either the whole re-read lands or none of it does: a half-replaced document,
+  // some clauses from this pass and some from the last, is the shape that makes
+  // a citation point at text no longer beside it.
+  async function replaceChunks(
+    document: DocumentRecord,
+    chunks: LeaseChunk[],
+  ): Promise<void> {
+    const now = clock.now();
+    await inTransaction(pool, async (client) => {
+      await client.query(
+        'DELETE FROM occupancy_document_chunks WHERE document_id = $1',
+        [document.id],
+      );
+      for (const chunk of chunks) {
+        await client.query(
+          `INSERT INTO occupancy_document_chunks
+             (id, document_id, tenancy_id, ordinal, clause_ref, heading,
+              page_from, page_to, text, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            newId(clock),
+            document.id,
+            document.tenancyId,
+            chunk.ordinal,
+            chunk.clauseRef,
+            chunk.heading,
+            chunk.pageFrom,
+            chunk.pageTo,
+            chunk.text,
+            now,
+          ],
+        );
+      }
+    });
+  }
+}
+
+async function inTransaction(
+  pool: Pool,
+  work: (client: PoolClient) => Promise<void>,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await work(client);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // A browser may send `application/pdf; charset=binary`. The parameters are not
@@ -242,6 +430,21 @@ function normalizeContentType(value: unknown): string {
     throw new KernelError('invalid', 'only a PDF can be attached');
   }
   return documentContentType;
+}
+
+function toChunk(row: ChunkRow): ChunkRecord {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    tenancyId: row.tenancy_id,
+    ordinal: Number(row.ordinal),
+    clauseRef: row.clause_ref,
+    heading: row.heading,
+    pageFrom: Number(row.page_from),
+    pageTo: Number(row.page_to),
+    text: row.text,
+    createdAt: row.created_at.toISOString(),
+  };
 }
 
 function toDocument(row: DocumentRow): DocumentRecord {
