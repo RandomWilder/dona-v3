@@ -70,13 +70,20 @@ These are the invariants that make every future pivot cheap. Violating one to sh
 
 **Goal: the real pilot building lives in the system; staff access is role-gated and audited.**
 
-- [ ] Modules `identity` / `portfolio` / `occupancy`: schemas, commands, contract tests. **Done when:** phone → person → unit → current occupancy resolves.
-- [ ] CSV importer for the tenant mapping table (idempotent, re-runnable, reports rejects). **Done when:** real pilot slice imported; 5 spot-checks pass.
-- [ ] Staff auth: email+password (**scrypt** — chosen in slice 5.2: `node:crypto` has it built in, so the container needs no native build toolchain; argon2id revisited in week 6 hardening), server sessions, roles **admin / operator / viewer**; permission checks server-side per command; every staff action writes an audit record. **Done when:** viewer can't mutate — proven by test, not by hidden buttons.
-- [ ] Admin shell: nav (queue · conversations · approvals · reports · properties · people · guidance) + people/properties list & create views. **Done when:** the pilot building is browsable on staging.
+- [x] Modules `identity` / `portfolio` / `occupancy`: schemas, commands, contract tests. **Done when:** phone → person → unit → current occupancy resolves.
+- [ ] CSV importer for the tenant mapping table (idempotent, re-runnable, reports rejects). **Done when:** real pilot slice imported; 5 spot-checks pass. — **Built and carried to week 3, not ticked.** The importer exists, is tested, and was validated end to end against a specimen file (`docs/reference/tenant-table-template.csv`): 24/24 applied, re-run a no-op, eight `resolveByPhone` spot-checks correct. The bar says *real* pilot slice, and Dona Dom's table has not arrived (`tasks/fuses.md` fuse 3, outstanding since 2026-08-22). Ticking it on mock data would be PIPELINE.md §9's "trusting the demo".
+- [x] Staff auth: email+password (**scrypt** — chosen in slice 5.2: `node:crypto` has it built in, so the container needs no native build toolchain; argon2id revisited in week 6 hardening), server sessions, roles **admin / operator / viewer**; permission checks server-side per command; every staff action writes an audit record. **Done when:** viewer can't mutate — proven by test, not by hidden buttons.
+- [x] Admin shell: nav (queue · conversations · approvals · reports · properties · people · guidance) + people/properties list & create views. **Done when:** the pilot building is browsable on staging.
 
 **Checkpoint demo:** log in as viewer vs admin — different powers; audit trail shows both sessions.
 **Cut line:** approvals + reports nav items can be dead links this week.
+
+**Closed 2026-08-25 — three of four, one externally blocked.** The demo was run on staging by
+the owner in a browser: `nelly` (viewer) saw every screen and no create form; `asaf` (admin) saw
+the same screens with the forms, and creating worked. `v0.2.0` on prod. The importer bar above
+is the only one open and it is waiting on someone else's inbox, not on us — it moves to week 3
+day 1 rather than being marked done. Cut line held: approvals and reports render empty states
+rather than dead links, which cost nothing.
 
 ## Week 3 — Lease ingestion & grounded answers (API-level)
 
