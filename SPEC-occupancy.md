@@ -355,6 +355,22 @@ The duplication is safe because a document never moves between tenancies: `attac
 resolves the tenancy server-side and nothing can re-file a document afterwards. The value is
 copied from the document row at ingest and is never taken from a caller.
 
+### Two ways a clause announces itself
+
+The body numbers its clauses `1.`, `3.2`, `12.1.4` at the start of a line. **The annexes do
+not.** נספח א׳ writes `סעיף 5 – תקופת השכירות`, naming the body clause its row qualifies,
+because the annex is a table of commercial terms keyed by the agreement it amends.
+
+Both forms are clause starts and both are detected. Measured on the real lease: reading only
+the first form left נספח א׳ — *the annex the digital twin reads*, holding the term structure,
+the rent, the maintenance fee and the securities — as a **single chunk split by length**,
+cited as `נספח א׳ (1/2)`. That is a reference naming two pages rather than a clause, which is
+exactly what 13.1 cannot be built on. The reference note's rule is that anything reading a
+lease "must go to נספח א׳ first"; a chunker that cannot see the annex's own numbering cannot.
+
+`סעיף` also appears mid-sentence — "כאמור בסעיף 12" — so the form is anchored to the start of
+a line and requires a number after the word.
+
 ### What a chunk points at
 
 `clause_ref` is what a citation will say — `נספח א׳ §3.2`, `§14.1`, `נספח י״ב §2`. The annex
@@ -389,17 +405,31 @@ would make a citation point at text no longer beside it.
 This is the one place in the module that deletes rows, and it is deliberate that it deletes
 only *derived* rows. Nothing a human wrote is removable here any more than it was in 11.2.
 
-### An incomplete lease says so
+### An incomplete lease says so, and keeps saying it
 
-Pages with no text layer are **counted and named**, never dropped. The reference note warns
-that a complete lease is not one file — two annexes say their content was emailed separately,
-and the handover protocol was blank — so ingestion must "expect an incomplete document and say
-so, rather than treating absence as 'no guarantee exists'".
+Pages with no text layer are **counted, named and stored**, never dropped. The reference note
+warns that a complete lease is not one file — two annexes say their content was emailed
+separately, and the handover protocol was blank — so ingestion must "expect an incomplete
+document and say so, rather than treating absence as 'no guarantee exists'".
 
 OCR for those pages is week 3's stated cut line (`ROADMAP.md`), logged as a manual-entry
-fallback. `ingestDocument` returns the page numbers it could not read, the admin screen shows
-them, and a later slice may fill them by hand or by OCR. What it must not do is return a lease
-that is quietly four pages shorter than the lease.
+fallback. What ingestion must not do is return a lease that is quietly four pages shorter than
+the lease.
+
+**Returning the fact is not enough, and the first cut of 12.1 proved it.** `ingestDocument`
+computed the missing pages, handed them back, and the browser redirect dropped them on the
+floor — so the property existed for the length of one HTTP response and nothing could ever
+show it again. Three columns on `occupancy_documents` keep it instead:
+
+| column | holds |
+|---|---|
+| `ingested_at` | when the document was last read, or `NULL` for never |
+| `page_count` | how many pages the reader saw |
+| `image_only_pages` | the pages that carried no text layer |
+
+`ingested_at` is also the honest answer to "has this been read", which a chunk count is not: a
+document read that produced **zero** chunks and a document nobody has read look identical from
+a count and are not the same fact.
 
 ### Extraction is the kernel's, clause vocabulary is this module's
 
@@ -420,6 +450,9 @@ real lease is copied into this repo.
 ```
 { documentId, tenancyId, chunks: number, pages: number, imageOnlyPages: number[] }
 ```
+
+The same three facts are written onto the document row, in the transaction that replaces the
+chunks, so the screen can still say them tomorrow.
 
 Unknown document → `not_found`. A row whose object has gone → `unavailable`, the same answer
 `readDocument` gives, never a document of zero chunks. A PDF that cannot be parsed at all →

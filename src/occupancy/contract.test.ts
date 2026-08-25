@@ -1059,6 +1059,14 @@ describe('occupancy contract', () => {
         assert.equal(ingestion.chunks, 3);
         assert.deepEqual(ingestion.imageOnlyPages, []);
 
+        // The same three facts on the document row. Returning them was not
+        // enough -- the first cut of this slice did exactly that, and the
+        // browser redirect dropped them, so no screen could say them again.
+        const [stored] = await occupancy.listDocuments(tenancy.id);
+        assert.ok(stored?.ingestedAt);
+        assert.equal(stored?.pageCount, 2);
+        assert.deepEqual(stored?.imageOnlyPages, []);
+
         const chunks = await occupancy.listChunks(document.id);
         assert.deepEqual(
           chunks.map((chunk) => chunk.ordinal),
@@ -1112,6 +1120,16 @@ describe('occupancy contract', () => {
           [0, 1, 2, 3],
         );
         assert.match(chunks[3]?.text ?? '', /60 יום/);
+
+        // The row moved with them: a document saying it was read on Tuesday
+        // beside chunks from Monday is a worse lie than either alone, which is
+        // why both are written in one transaction.
+        const [stored] = await reread.listDocuments(document.tenancyId);
+        assert.equal(stored?.pageCount, 3);
+        assert.equal(
+          stored?.ingestedAt,
+          new Date('2026-09-16T09:00:00Z').toISOString(),
+        );
       });
     });
 
@@ -1135,6 +1153,22 @@ describe('occupancy contract', () => {
         assert.deepEqual(ingestion.imageOnlyPages, [2, 3]);
         assert.equal(ingestion.pages, 3);
         assert.equal(ingestion.chunks, 1);
+
+        const [stored] = await occupancy.listDocuments(ingestion.tenancyId);
+        assert.deepEqual(stored?.imageOnlyPages, [2, 3]);
+        assert.equal(stored?.pageCount, 3);
+      });
+    });
+
+    it('has never been read until it is read', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, tenancy } = await tenancyFor(pool, pdfOf(lease));
+        const [before] = await occupancy.listDocuments(tenancy.id);
+        // Null and not a zero: "nobody has read this" is a different fact from
+        // "this was read and produced nothing", and a count cannot say which.
+        assert.equal(before?.ingestedAt, null);
+        assert.equal(before?.pageCount, null);
+        assert.deepEqual(before?.imageOnlyPages, []);
       });
     });
 

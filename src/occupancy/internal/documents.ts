@@ -39,6 +39,13 @@ export interface DocumentRecord {
   contentType: string;
   byteSize: number;
   createdAt: string;
+  // What the last pass over this document found out about the document itself.
+  // `ingestedAt` is null for one never read -- and it, not a chunk count, is the
+  // honest answer to "has this been ingested": a document read that produced
+  // nothing and a document nobody opened look identical from a count.
+  ingestedAt: string | null;
+  pageCount: number | null;
+  imageOnlyPages: number[];
 }
 
 export interface AttachDocumentInput {
@@ -130,9 +137,13 @@ interface DocumentRow {
   content_type: string;
   byte_size: number;
   created_at: Date;
+  ingested_at: Date | null;
+  page_count: number | null;
+  image_only_pages: number[] | null;
 }
 
-const columns = `id, tenancy_id, kind, object_path, content_type, byte_size, created_at`;
+const columns = `id, tenancy_id, kind, object_path, content_type, byte_size,
+  created_at, ingested_at, page_count, image_only_pages`;
 
 interface ChunkRow {
   id: string;
@@ -315,7 +326,10 @@ export function createDocuments(deps: DocumentDeps): Documents {
           const pages = await deps.pdf.pages(object.bytes);
           const { chunks, imageOnlyPages } = chunkLease(pages);
 
-          await replaceChunks(document, chunks);
+          await replaceChunks(document, chunks, {
+            pageCount: pages.length,
+            imageOnlyPages,
+          });
 
           return {
             documentId: document.id,
@@ -371,12 +385,23 @@ export function createDocuments(deps: DocumentDeps): Documents {
   async function replaceChunks(
     document: DocumentRecord,
     chunks: LeaseChunk[],
+    read: { pageCount: number; imageOnlyPages: number[] },
   ): Promise<void> {
     const now = clock.now();
     await inTransaction(pool, async (client) => {
       await client.query(
         'DELETE FROM occupancy_document_chunks WHERE document_id = $1',
         [document.id],
+      );
+      // In the same transaction as the chunks it describes. A row saying it was
+      // read beside chunks from an earlier pass would be a worse lie than
+      // either alone -- and this is the fact the screen shows tomorrow, when
+      // the response that carried it is long gone.
+      await client.query(
+        `UPDATE occupancy_documents
+            SET ingested_at = $2, page_count = $3, image_only_pages = $4
+          WHERE id = $1`,
+        [document.id, now, read.pageCount, read.imageOnlyPages],
       );
       for (const chunk of chunks) {
         await client.query(
@@ -456,5 +481,8 @@ function toDocument(row: DocumentRow): DocumentRecord {
     contentType: row.content_type,
     byteSize: Number(row.byte_size),
     createdAt: row.created_at.toISOString(),
+    ingestedAt: row.ingested_at ? row.ingested_at.toISOString() : null,
+    pageCount: row.page_count === null ? null : Number(row.page_count),
+    imageOnlyPages: (row.image_only_pages ?? []).map(Number),
   };
 }
