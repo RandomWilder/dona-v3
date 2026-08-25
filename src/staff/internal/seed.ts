@@ -1,5 +1,6 @@
 import { KernelError } from '../../kernel/errors.ts';
 import type { StaffAuth } from './auth.ts';
+import type { StaffRole } from './roles.ts';
 
 export interface SeedEnv {
   email?: string;
@@ -14,9 +15,37 @@ export interface SeedResult {
 // Runs on every boot, after migrations and before the server listens. Both
 // values come from Secret Manager in staging and prod; the password never
 // appears in the repo, in a log, or in an audit record.
-export async function seedStaffOperator(
+//
+// Two entry points rather than one function with a role parameter, and neither
+// takes the role from the environment. Slice 9.1 rejected a STAFF_SEED_ROLE
+// because a value that could say `viewer` is a way to deploy a system with no
+// way to administer it; the same objection rules out a defaulted parameter,
+// which fails *open* to admin when a caller forgets. Each door below names its
+// own role as a literal, so changing who is seeded costs a deploy and leaves a
+// diff.
+
+// The first operator, and the one that must exist for the system to be usable.
+export function seedStaffOperator(
   auth: StaffAuth,
   env: SeedEnv,
+): Promise<SeedResult> {
+  return seed(auth, env, 'admin', 'STAFF_SEED');
+}
+
+// Slice 10.2. Read-only, and deliberately optional: an environment without it
+// is a system with one less demo account, not a system nobody can get into.
+export function seedStaffViewer(
+  auth: StaffAuth,
+  env: SeedEnv,
+): Promise<SeedResult> {
+  return seed(auth, env, 'viewer', 'STAFF_VIEWER');
+}
+
+async function seed(
+  auth: StaffAuth,
+  env: SeedEnv,
+  role: StaffRole,
+  varPrefix: string,
 ): Promise<SeedResult> {
   const email = env.email?.trim();
   const password = env.password;
@@ -28,7 +57,7 @@ export async function seedStaffOperator(
   if (!email || !password) {
     throw new KernelError(
       'invalid',
-      'STAFF_SEED_EMAIL and STAFF_SEED_PASSWORD must be set together',
+      `${varPrefix}_EMAIL and ${varPrefix}_PASSWORD must be set together`,
     );
   }
 
@@ -36,10 +65,7 @@ export async function seedStaffOperator(
     return { seeded: false, reason: 'already exists' };
   }
   try {
-    // An admin, fixed rather than env-driven: this is the only account at boot,
-    // and a STAFF_SEED_ROLE that could say `viewer` is a way to deploy a system
-    // with no way to administer it.
-    await auth.createOperator({ email, password, role: 'admin' });
+    await auth.createOperator({ email, password, role });
   } catch (error) {
     // Two instances booting at once both pass the check above; the loser of the
     // insert has still got what it wanted.

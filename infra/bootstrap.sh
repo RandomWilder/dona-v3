@@ -34,6 +34,8 @@ DB_USER=dona
 SECRET="$ENV-database-url"
 SEED_EMAIL_SECRET="$ENV-staff-seed-email"
 SEED_PASSWORD_SECRET="$ENV-staff-seed-password"
+VIEWER_EMAIL_SECRET="$ENV-staff-viewer-email"
+VIEWER_PASSWORD_SECRET="$ENV-staff-viewer-password"
 DOCS_BUCKET="$PROJECT-$ENV-docs"
 RUNTIME_SA="app-$ENV"
 DEPLOY_SA="deploy-$ENV"
@@ -150,6 +152,27 @@ else
       --data-file=- --replication-policy=automatic --project "$PROJECT"
 fi
 
+# The read-only account the week-2 demo needs (slice 10.2). Same idempotent
+# shape as the seed pair above: an existing secret is left untouched, so a value
+# set by hand survives every re-run. Created here rather than by hand because
+# the two environments must not drift -- staging's were created manually, which
+# is exactly the reason prod's are not.
+if gcloud secrets describe "$VIEWER_EMAIL_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+  echo "  $VIEWER_EMAIL_SECRET exists"
+else
+  printf 'viewer@donadom.co.il' |
+    gcloud secrets create "$VIEWER_EMAIL_SECRET" \
+      --data-file=- --replication-policy=automatic --project "$PROJECT"
+fi
+
+if gcloud secrets describe "$VIEWER_PASSWORD_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+  echo "  $VIEWER_PASSWORD_SECRET exists"
+else
+  openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24 |
+    gcloud secrets create "$VIEWER_PASSWORD_SECRET" \
+      --data-file=- --replication-policy=automatic --project "$PROJECT"
+fi
+
 say "Service accounts"
 for sa in "$RUNTIME_SA" "$DEPLOY_SA"; do
   gcloud iam service-accounts describe "$sa@$PROJECT.iam.gserviceaccount.com" \
@@ -163,7 +186,8 @@ done
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:$RUNTIME_EMAIL" \
   --role roles/cloudsql.client --condition=None >/dev/null
-for secret in "$SECRET" "$SEED_EMAIL_SECRET" "$SEED_PASSWORD_SECRET"; do
+for secret in "$SECRET" "$SEED_EMAIL_SECRET" "$SEED_PASSWORD_SECRET" \
+  "$VIEWER_EMAIL_SECRET" "$VIEWER_PASSWORD_SECRET"; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member "serviceAccount:$RUNTIME_EMAIL" \
     --role roles/secretmanager.secretAccessor --project "$PROJECT" >/dev/null
