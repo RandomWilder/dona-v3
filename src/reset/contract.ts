@@ -43,8 +43,16 @@ export const truncatedTables = [
   'portfolio_assets',
   'occupancy_tenancies',
   'occupancy_parties',
+  'occupancy_documents',
   'idempotency_keys',
 ] as const;
+
+// What the truncate does *not* reach: the objects those document rows point at.
+// They stay in the bucket, unreferenced, and that is the honest position rather
+// than a gap nobody noticed — the bucket is versioned, deleting is the one
+// operation this system has no path for, and a retention rule is Dona Dom's to
+// set (docs/runbook-deploy.md, "Retention"). A reset therefore orphans objects
+// on purpose, and week 6's deletion work is what will let it stop.
 
 // Left alone, and this is the point of the slice rather than an afterthought:
 // the staff logins are in use, and the week-2 audit trail is evidence of a demo

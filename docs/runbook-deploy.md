@@ -233,11 +233,16 @@ verified after each provision:
 | **versioning on** | an overwrite or deletion is recoverable; the object may be the only copy of a signed contract |
 | **location `me-west1`** | Israeli tenants' documents stay in Israel |
 
-Read access is `roles/storage.objectViewer` on that one bucket, granted to that
-environment's runtime account only — never a project-level storage role, so
-`app-staging` cannot read prod's documents. **The app cannot write**: nothing
-uploads leases until the week-3 upload slice, and `objectCreator` is granted
-then, when there is something to grant it for.
+Access is `roles/storage.objectViewer` **and, since slice 11.2,
+`roles/storage.objectCreator`** on that one bucket, granted to that environment's
+runtime account only — never a project-level storage role, so `app-staging`
+cannot read prod's documents. `objectCreator` is the grant 7.0 deferred "until
+the slice that needs it"; the admin lease upload is what needed it.
+
+**What is still not granted is `objectAdmin`, which carries delete.** The app can
+write a new object and read one, and it cannot destroy a signed contract. That
+matters while there is no retention rule and no deletion path at all — see
+*Retention* below.
 
 Check it is still closed:
 
@@ -251,14 +256,34 @@ must return `403`, and a bucket listing `401`.
 ### Object paths carry no personal names
 
 ```
-leases/<city>/<street-and-number>/bldg-<n>/unit-<n>/lease-<start-date>-signed.pdf
+leases/bldg-<buildingId>/unit-<unitId>/tenancy-<tenancyId>/<kind>-<documentId>.pdf
 ```
 
 Paths surface in logs, error messages and audit entries, which is exactly where
 personal data must not appear (SPEC.md). The place identifies the document; the
 people in it never do.
 
-Upload with your own credentials — humans upload, the service accounts only read:
+**The shape changed in slice 11.2, from a readable address to ids.** 7.0 wrote
+this rule as `leases/bet-shemesh/harav-kook-48/bldg-204/unit-24/…`, transliterated
+by hand for the one document uploaded by hand. Generating that shape means
+transliterating Hebrew *in code*, and two streets that transliterate alike would
+file one flat's lease under another's — a correctness failure with isolation
+flavour, arriving quietly. Ids also do not rot: correcting a building's address
+leaves every object still correctly filed, and objects cannot be cheaply renamed.
+
+So the path is ids and the **database row is the index** from an address to an
+object. To find a tenancy's documents, ask the database rather than the bucket:
+
+```sql
+SELECT object_path FROM occupancy_documents WHERE tenancy_id = '<id>';
+```
+
+The one hand-uploaded lease keeps its old readable path. It is grandfathered, not
+migrated — moving it would break nothing and prove nothing.
+
+Uploading is now the admin screen's job (`/admin/units/<id>`, an admin or
+operator). By hand, with your own credentials, remains possible and is what the
+first upload into a fresh environment uses:
 
 ```bash
 gcloud storage cp "<local file>" "gs://dona-v3-prod-docs/leases/<path>" --project dona-v3

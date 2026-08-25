@@ -2,14 +2,20 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import multipart from '@fastify/multipart';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { createIdentity } from '../../identity/contract.ts';
 import { createAuditLog } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
+import type { ObjectStore } from '../../kernel/objects.ts';
 import type { Html } from '../../kernel/ui/html.ts';
-import { createOccupancy } from '../../occupancy/contract.ts';
+import {
+  createOccupancy,
+  type DocumentKind,
+  maxDocumentBytes,
+} from '../../occupancy/contract.ts';
 import { createPortfolio } from '../../portfolio/contract.ts';
 import { createStaffAuth, type Session } from '../internal/auth.ts';
 import { createStaffCommands } from '../internal/commands.ts';
@@ -35,6 +41,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export interface StaffDeps {
   pool: Pool;
   clock?: Clock;
+  // Where lease documents live. Absent, occupancy falls back to a store that
+  // throws rather than one that forgets (SPEC-occupancy.md).
+  store?: ObjectStore;
 }
 
 interface Credentials {
@@ -107,6 +116,16 @@ function floorOf(value: unknown): number | undefined {
   return Number.isNaN(parsed) ? Number.NaN : parsed;
 }
 
+// The kind box on the upload form. An absent or unrecognised value is a lease:
+// occupancy validates the vocabulary, and this only has to pick the string it
+// hands over. Multipart fields arrive as objects with a `value`.
+function kindOf(fields: unknown): DocumentKind {
+  const field = (fields as Record<string, { value?: unknown }> | undefined)
+    ?.kind;
+  const value = typeof field?.value === 'string' ? field.value : '';
+  return value.length > 0 ? (value as DocumentKind) : 'lease';
+}
+
 function credentials(body: unknown): Credentials | null {
   if (typeof body !== 'object' || body === null) {
     return null;
@@ -135,6 +154,7 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     clock,
     identity,
     portfolio,
+    store: deps.store,
   });
   const guarded = { identity, portfolio, occupancy, pool: deps.pool, clock };
   const commands = createStaffCommands(guarded);
@@ -234,6 +254,13 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     });
   }
 
+  // One file, capped where the module caps it — a second number here would
+  // drift from the one occupancy enforces, and the request would be read into
+  // memory before anything refused it.
+  app.register(multipart, {
+    limits: { files: 1, fileSize: maxDocumentBytes, fields: 4 },
+  });
+
   app.get(
     '/admin',
     page('queue', async () =>
@@ -293,8 +320,11 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
 
   app.get(
     '/admin/units/:unitId',
-    page('properties', async (session, _context, request) =>
-      unitPage(await queries.getUnitDetail(param(request, 'unitId'), session)),
+    page('properties', async (session, context, request) =>
+      unitPage(
+        await queries.getUnitDetail(param(request, 'unitId'), session),
+        context,
+      ),
     ),
   );
 
@@ -384,6 +414,77 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
       }
     },
   );
+
+  // The upload. A file arrives as multipart; everything else on this screen is
+  // a urlencoded form, which is why this does not go through `create()`.
+  app.post('/admin/units/:unitId/documents', async (request, reply) => {
+    const session = await currentSession(request);
+    if (!session) {
+      return reply.redirect('/admin/login', 302);
+    }
+    const unitId = param(request, 'unitId');
+    const back = `/admin/units/${encodeURIComponent(unitId)}`;
+    try {
+      const file = await request.file();
+      if (!file) {
+        throw new KernelError('invalid', 'no file was posted');
+      }
+      // Read before the capability check only because the parser has already
+      // begun; the check still runs before anything is stored, inside the
+      // guarded surface. `truncated` is how @fastify/multipart reports the cap
+      // being hit, and a truncated PDF must not be stored as a whole one.
+      const bytes = await file.toBuffer();
+      if (file.file.truncated) {
+        throw new KernelError('invalid', 'the document is too large', {
+          maxBytes: maxDocumentBytes,
+        });
+      }
+
+      // The tenancy is resolved here, from the unit, and is never a hidden
+      // field: a caller-supplied tenancy id would let a crafted post file a
+      // document against a tenancy the operator never opened.
+      const tenancy = await occupancy.findCurrentTenancy(unitId);
+      if (!tenancy) {
+        throw new KernelError('invalid', 'the flat has no current tenancy');
+      }
+
+      await commands.attachDocument(
+        {
+          tenancyId: tenancy.tenancy.id,
+          kind: kindOf(file.fields),
+          // The browser's content type, checked by the module against the one
+          // type it accepts. The filename it also sent is deliberately dropped
+          // on the floor: it is a person's name on its way into a log.
+          contentType: file.mimetype,
+          bytes,
+        },
+        session,
+      );
+      return reply.redirect(back, 302);
+    } catch (error) {
+      const code = error instanceof KernelError ? error.code : 'unavailable';
+      return reply.redirect(`${back}?error=${code}`, 302);
+    }
+  });
+
+  // The bytes back. Inline rather than an attachment: an operator checking a
+  // lease wants to read it, and a download would leave the file on a laptop.
+  app.get('/admin/documents/:documentId', async (request, reply) => {
+    const session = await currentSession(request);
+    if (!session) {
+      return reply.redirect('/admin/login', 302);
+    }
+    const { document, bytes } = await queries.getDocument(
+      param(request, 'documentId'),
+      session,
+    );
+    reply
+      .header('content-type', document.contentType)
+      .header('content-disposition', 'inline')
+      .header('cache-control', 'no-store')
+      .header('x-content-type-options', 'nosniff');
+    return reply.send(bytes);
+  });
 
   app.get('/admin/login', async (request, reply) => {
     if (await currentSession(request)) {

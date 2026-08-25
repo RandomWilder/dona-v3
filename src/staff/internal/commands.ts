@@ -10,6 +10,8 @@ import { type AuditLog, createAuditLog } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import type {
   AddPartyInput,
+  AttachDocumentInput,
+  DocumentRecord,
   EndTenancyInput,
   Occupancy,
   OpenTenancyInput,
@@ -53,13 +55,17 @@ export interface StaffCommands {
   openTenancy(input: OpenTenancyInput, session: Session): Promise<Tenancy>;
   addParty(input: AddPartyInput, session: Session): Promise<Party>;
   endTenancy(input: EndTenancyInput, session: Session): Promise<Tenancy>;
+  attachDocument(
+    input: AttachDocumentInput,
+    session: Session,
+  ): Promise<DocumentRecord>;
 }
 
 export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
   const clock = deps.clock ?? systemClock;
   const audit = deps.audit ?? createAuditLog(deps.pool, clock);
 
-  // One shape for all eight. The capability check runs *inside* the audited
+  // One shape for all nine. The capability check runs *inside* the audited
   // work, so a refusal leaves an `error` row with code not_allowed rather than
   // no row at all — the pattern identity established for rejected commands —
   // and it runs *before* the module is reached, so a viewer never touches
@@ -120,6 +126,10 @@ export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
     endTenancy: (input, session) =>
       guard('endTenancy', 'mutate', session, (actor) =>
         deps.occupancy.endTenancy(input, actor),
+      ),
+    attachDocument: (input, session) =>
+      guard('attachDocument', 'mutate', session, (actor) =>
+        deps.occupancy.attachDocument(input, actor),
       ),
   };
 }

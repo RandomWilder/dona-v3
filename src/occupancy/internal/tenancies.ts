@@ -12,6 +12,7 @@ import {
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
+import type { ObjectStore } from '../../kernel/objects.ts';
 import { asText, optionalText, validId } from '../../kernel/validate.ts';
 import {
   createPortfolio,
@@ -19,6 +20,13 @@ import {
   type UnitView,
 } from '../../portfolio/contract.ts';
 import { optionalDate, validDate } from './dates.ts';
+import {
+  type AttachDocumentInput,
+  createDocuments,
+  createUnconfiguredStore,
+  type DocumentRecord,
+  type Documents,
+} from './documents.ts';
 import {
   type OccupancyRole,
   sortRoles,
@@ -112,6 +120,16 @@ export interface Occupancy {
   // person and arrives at a place; the admin unit view enters at a place.
   findCurrentTenancy(unitId: string): Promise<TenancyView | null>;
   resolveByPhone(phone: string): Promise<OccupancyResolution | null>;
+  // Slice 11.2: lease documents, indexed per occupancy. The row hangs off the
+  // tenancy because that is the scope every later read is filtered by.
+  attachDocument(
+    input: AttachDocumentInput,
+    actor: Actor,
+  ): Promise<DocumentRecord>;
+  listDocuments(tenancyId: string): Promise<DocumentRecord[]>;
+  readDocument(
+    documentId: string,
+  ): Promise<{ document: DocumentRecord; bytes: Buffer }>;
 }
 
 export interface OccupancyDeps {
@@ -122,6 +140,10 @@ export interface OccupancyDeps {
   // in a join. Both arrive through their contract.ts and nothing else.
   identity?: Identity;
   portfolio?: Portfolio;
+  // Where lease documents live. Absent, it is a store that throws rather than
+  // one that remembers: a process that forgot to configure one must not accept
+  // a signed contract and quietly drop it.
+  store?: ObjectStore;
 }
 
 interface TenancyRow {
@@ -144,6 +166,13 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
   const audit = deps.audit ?? createAuditLog(pool, clock);
   const identity = deps.identity ?? createIdentity({ pool, clock, audit });
   const portfolio = deps.portfolio ?? createPortfolio({ pool, clock, audit });
+  const documents: Documents = createDocuments({
+    pool,
+    clock,
+    audit,
+    portfolio,
+    store: deps.store ?? createUnconfiguredStore(),
+  });
 
   // The whole view for one tenancy. Both entry points into it — by tenancy id
   // and by unit — assemble it here rather than one calling the other through
@@ -412,6 +441,13 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
       }
       return { person, tenancies };
     },
+
+    // Delegated whole: documents own their own validation, their own audit
+    // entry and their own ordering rule, and this module's other commands have
+    // no business knowing about bytes.
+    attachDocument: (input, actor) => documents.attachDocument(input, actor),
+    listDocuments: (tenancyId) => documents.listDocuments(tenancyId),
+    readDocument: (documentId) => documents.readDocument(documentId),
   };
 }
 

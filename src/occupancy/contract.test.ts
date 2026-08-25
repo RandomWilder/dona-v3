@@ -5,6 +5,7 @@ import { createIdentity } from '../identity/contract.ts';
 import { type Clock, fixedClock } from '../kernel/clock.ts';
 import type { KernelError } from '../kernel/errors.ts';
 import { newId } from '../kernel/ids.ts';
+import { createMemoryStore, type ObjectStore } from '../kernel/objects.ts';
 import { migratedPoolOrNull, skipReason } from '../kernel/pg-support.ts';
 import { createPortfolio } from '../portfolio/contract.ts';
 import { type Actor, createOccupancy } from './contract.ts';
@@ -48,11 +49,18 @@ async function withPool(
   }
 }
 
-// The three modules as one caller sees them, on one clock.
-function world(pool: Pool, clock?: Clock) {
+// The three modules as one caller sees them, on one clock. The document store
+// is in memory: no test reaches the network, and none needs a bucket.
+function world(pool: Pool, clock?: Clock, store?: ObjectStore) {
   const identity = createIdentity({ pool, clock });
   const portfolio = createPortfolio({ pool, clock });
-  const occupancy = createOccupancy({ pool, clock, identity, portfolio });
+  const occupancy = createOccupancy({
+    pool,
+    clock,
+    identity,
+    portfolio,
+    store: store ?? createMemoryStore(),
+  });
   return { identity, portfolio, occupancy };
 }
 
@@ -774,6 +782,196 @@ describe('occupancy contract', () => {
       // An unnormalisable number is identity's `invalid`, reached through this
       // module without being reinterpreted.
       await assert.rejects(occupancy.resolveByPhone('1800123456'), invalid);
+    });
+  });
+  // Slice 11.2. A document belongs to a tenancy, and the whole point of the
+  // table is that it belongs to nothing else.
+  describe('lease documents', () => {
+    async function tenancyFor(pool: Pool, store?: ObjectStore) {
+      const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+      const world_ = world(pool, clock, store);
+      const building = await world_.portfolio.addBuilding(
+        uniqueAddress(),
+        actor,
+      );
+      const unit = await world_.portfolio.addUnit(
+        { buildingId: building.id, label: '4', floor: 1 },
+        actor,
+      );
+      const tenancy = await world_.occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-01-01' },
+        actor,
+      );
+      return { ...world_, building, unit, tenancy };
+    }
+
+    const pdf = () => Buffer.from('%PDF-1.7\nthe signed lease\n%%EOF');
+
+    it('stores a lease and reads the same bytes back', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, building, unit, tenancy } = await tenancyFor(pool);
+
+        const document = await occupancy.attachDocument(
+          {
+            tenancyId: tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: pdf(),
+          },
+          actor,
+        );
+
+        assert.equal(document.tenancyId, tenancy.id);
+        assert.equal(document.byteSize, pdf().length);
+        // The place, by id, and nothing a person is called.
+        assert.equal(
+          document.objectPath,
+          `leases/bldg-${building.id}/unit-${unit.id}/tenancy-${tenancy.id}/lease-${document.id}.pdf`,
+        );
+
+        const read = await occupancy.readDocument(document.id);
+        assert.equal(read.bytes.toString(), pdf().toString());
+        assert.equal(read.document.id, document.id);
+
+        const listed = await occupancy.listDocuments(tenancy.id);
+        assert.deepEqual(
+          listed.map((row) => row.id),
+          [document.id],
+        );
+      });
+    });
+
+    it("keeps one tenancy's documents out of another's list", async (t) => {
+      await withPool(t, async (pool) => {
+        const first = await tenancyFor(pool);
+        const second = await tenancyFor(pool);
+
+        const mine = await first.occupancy.attachDocument(
+          {
+            tenancyId: first.tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: pdf(),
+          },
+          actor,
+        );
+        await second.occupancy.attachDocument(
+          {
+            tenancyId: second.tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: pdf(),
+          },
+          actor,
+        );
+
+        // The scope every later read is filtered by, asserted here before
+        // anything is built on top of it.
+        const listed = await first.occupancy.listDocuments(first.tenancy.id);
+        assert.deepEqual(
+          listed.map((row) => row.id),
+          [mine.id],
+        );
+      });
+    });
+
+    it('refuses a tenancy that does not exist', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy } = await tenancyFor(pool);
+        await assert.rejects(
+          occupancy.attachDocument(
+            {
+              tenancyId: newId(),
+              kind: 'lease',
+              contentType: 'application/pdf',
+              bytes: pdf(),
+            },
+            actor,
+          ),
+          (error: KernelError) => error.code === 'not_found',
+        );
+      });
+    });
+
+    it('refuses anything that is not a PDF, and an empty file', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, tenancy } = await tenancyFor(pool);
+        const attach = (contentType: string, bytes: Buffer) =>
+          occupancy.attachDocument(
+            { tenancyId: tenancy.id, kind: 'lease', contentType, bytes },
+            actor,
+          );
+
+        await assert.rejects(
+          attach('image/jpeg', pdf()),
+          (error: KernelError) => error.code === 'invalid',
+        );
+        await assert.rejects(
+          attach('application/pdf', Buffer.alloc(0)),
+          (error: KernelError) => error.code === 'invalid',
+        );
+        // Parameters are not the type: a browser may send a charset, and
+        // rejecting that would refuse a legitimate upload.
+        const ok = await attach('application/pdf; charset=binary', pdf());
+        assert.equal(ok.contentType, 'application/pdf');
+      });
+    });
+
+    it('leaves no row when the object could not be stored', async (t) => {
+      await withPool(t, async (pool) => {
+        // The ordering rule, asserted by breaking it: object first, row second,
+        // so a failure leaves an orphan object rather than a lease the admin
+        // can list and cannot open.
+        const failing: ObjectStore = {
+          put: async () => {
+            throw new Error('bucket unreachable');
+          },
+          read: async () => {
+            throw new Error('bucket unreachable');
+          },
+          describe: () => 'failing',
+        };
+        const { occupancy, tenancy } = await tenancyFor(pool, failing);
+
+        await assert.rejects(
+          occupancy.attachDocument(
+            {
+              tenancyId: tenancy.id,
+              kind: 'lease',
+              contentType: 'application/pdf',
+              bytes: pdf(),
+            },
+            actor,
+          ),
+        );
+        assert.deepEqual(await occupancy.listDocuments(tenancy.id), []);
+      });
+    });
+
+    it('reports a missing object rather than serving an empty file', async (t) => {
+      await withPool(t, async (pool) => {
+        const store = createMemoryStore();
+        const { occupancy, tenancy } = await tenancyFor(pool, store);
+        const document = await occupancy.attachDocument(
+          {
+            tenancyId: tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: pdf(),
+          },
+          actor,
+        );
+        // A second store stands for the object having gone: the row is intact
+        // and the bytes are not.
+        const { occupancy: withEmptyStore } = await tenancyFor(
+          pool,
+          createMemoryStore(),
+        );
+        await assert.rejects(
+          withEmptyStore.readDocument(document.id),
+          (error: KernelError) => error.code === 'not_found',
+        );
+      });
     });
   });
 });

@@ -59,7 +59,7 @@ jobs:
             --service-account "app-staging@$PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$PROJECT:$REGION:dona-staging" \
             --set-secrets "DATABASE_URL=staging-database-url:latest,STAFF_SEED_EMAIL=staging-staff-seed-email:latest,STAFF_SEED_PASSWORD=staging-staff-seed-password:latest,STAFF_VIEWER_EMAIL=staging-staff-viewer-email:latest,STAFF_VIEWER_PASSWORD=staging-staff-viewer-password:latest" \
-            --update-env-vars "APP_VERSION=${SHA:0:7}" \
+            --update-env-vars "APP_VERSION=${SHA:0:7},DOCS_BUCKET=$PROJECT-staging-docs" \
             --allow-unauthenticated \
             --min-instances 0 \
             --max-instances 3 \

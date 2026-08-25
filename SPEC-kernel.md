@@ -39,6 +39,27 @@ Known gap, to close with the first route that takes a body: Fastify's schema-val
 
 Migration `0003_staff_auth.sql` is the first schema the kernel runs on another module's behalf. The runner is kernel machinery; the tables are not. A module's tables are described in that module's spec — `SPEC-staff.md` for `staff_operators`, `staff_sessions` and `staff_login_attempts` — and the kernel never reads them.
 
+## Object store (`objects.ts`, slice 11.2)
+
+`put(path, bytes, contentType)` and `read(path)`. Infrastructure on the same footing as
+`db.ts`: it holds the shape of a transfer and no business logic at all — it does not know
+what a lease is, and the paths it is handed are built by the module that owns them
+(`SPEC-occupancy.md`).
+
+Two implementations. `createGcsStore({ bucket })` talks to the GCS JSON API over `fetch`,
+with `google-auth-library` for access tokens and nothing else: token acquisition differs
+between Cloud Run's metadata server and a laptop's ADC, and hand-rolling an OAuth refresh
+for a bucket holding signed contracts is the wrong economy — while the transfer itself is
+two HTTP calls that need no SDK. `createMemoryStore()` is what the tests use, so no test
+reaches the network and none needs a bucket.
+
+**Which one is running is reported at boot**, beside the seed lines. An absent
+`DOCS_BUCKET` is not an error — locally there is no bucket and `npm run dev` must still
+start — so it falls back to memory and *says so*. A deployed revision whose boot line reads
+`docs: memory` is wrong in the same visible way a `-dev` version string is.
+
+A missing object is `not_found`, never empty bytes.
+
 ## Idempotency (`idempotency.ts`)
 
 `once<T>(key, work)` — the key is the caller's business intent (job id, offer id), never a random value.

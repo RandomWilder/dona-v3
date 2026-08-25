@@ -223,6 +223,100 @@ Building this seam in 7.1 — with every party the lease will ever carry — is 
 alternative is reopening it in week 3, against real tenant data, with retrieval already
 written on top of it.
 
+## Lease documents (slice 11.2)
+
+The module map in `SPEC.md` assigns lease documents here — *"lease documents (indexed per
+occupancy)"* — and this is the slice that builds them. A document hangs off a **tenancy**,
+never off a unit and never off a person. That is not filing convenience: it is the scope
+every later read is filtered by. Week 3's retrieval is scoped by `tenancyAccess`, and a
+document attached to a unit would outlive the tenancy that may see it.
+
+| Table | Holds |
+|---|---|
+| `occupancy_documents` | `id`, `tenancy_id`, `kind`, `object_path`, `content_type`, `byte_size`, `created_at` |
+
+Migration `0009_occupancy_documents.sql`. `ON DELETE RESTRICT` to the tenancy, as
+everything else in this module is; `object_path` is `UNIQUE`, so two rows can never claim
+one object.
+
+### The path names the place with ids, and nothing else
+
+```
+leases/bldg-<buildingId>/unit-<unitId>/tenancy-<tenancyId>/<kind>-<documentId>.pdf
+```
+
+Slice 7.0's rule is that a path carries the place and never the people, because paths reach
+logs, error messages and audit rows. It wrote that rule as a readable address —
+`leases/bet-shemesh/harav-kook-48/bldg-204/unit-24/…`, transliterated by hand for the one
+document uploaded by hand.
+
+Generating that shape means transliterating Hebrew **in code**, and two streets that
+transliterate alike would file one flat's lease under another's. That is a correctness
+failure with isolation flavour, arriving quietly. Ids also do not rot: correcting a
+building's address leaves every object still correctly filed, where a text path would be
+stale and objects cannot be cheaply renamed.
+
+So the path is ids, and the **row is the index** from an address to an object. Finding a
+lease by address is a query, which is what a database is for. The single hand-uploaded
+object keeps its old path; it is grandfathered, not migrated.
+
+### What is deliberately not stored
+
+- **The client's filename.** `lease-cohen-signed.pdf` is a person's name in a string that
+  reaches logs. It is discarded on arrival, not stored and not echoed. `kind`, content type
+  and size say what an operator needs.
+- **Who uploaded it.** That is in `audit_log`, written by the staff edge that called this.
+  One store and not two — the argument `staff`'s guarded surface already makes when it
+  records the capability rather than the payload.
+
+### Object first, row second
+
+`attachDocument` writes the object before it writes the row, and the order is deliberate.
+
+A put that succeeds with a failed insert leaves an orphan object in a versioned bucket:
+invisible, recoverable, costing storage. The reverse leaves a **row whose document is not
+there** — a lease the admin lists and cannot open, which is a lie the screen renders on the
+system's behalf. Between an unreferenced object and a dangling reference, this module
+already has a stated preference: `ON DELETE RESTRICT` everywhere, because a dangling
+tenancy must be impossible rather than unlikely.
+
+A contract test asserts it by failing the store and finding no row.
+
+### Limits are code, not config rows
+
+`application/pdf` only, and 20 MB. A stated exception to `SPEC.md` rule 4, on the same
+argument `staff`'s role matrix makes: rule 4 governs tunables, and a size cap that a
+database write could raise is a memory-exhaustion lever rather than a policy. Changing
+either costs a deploy and leaves a diff.
+
+`application/pdf` alone because slice 12.1 extracts text from a PDF and nothing else. A
+scan arrives as a PDF too; OCR is the week-3 cut line, logged as manual entry.
+
+### Commands
+
+#### `attachDocument({ tenancyId, kind, contentType, bytes }, actor) → Document`
+
+Unknown tenancy → `not_found`. A content type other than `application/pdf`, an empty body,
+or a body over the cap → `invalid`. The unit and building the path needs are read through
+`portfolio.getUnit`, so a document cannot be filed under a place this module invented.
+
+**Not idempotent, and it says so.** This module's other commands rest on natural keys; a
+document has none — the same file uploaded twice is a second document, because the second
+upload is usually a correction and discarding it would lose the correction. The browser
+form has no intent to key on either.
+
+#### `listDocuments(tenancyId) → Document[]`
+
+Newest first. Metadata only: no bytes, no store round trip.
+
+#### `readDocument(documentId) → { document, bytes }`
+
+Unknown id → `not_found`; a row whose object has gone → `unavailable`, never an empty file.
+
+Both reads are unaudited here, as this module's other reads are, and their callers audit
+their own use — `staff` writes a row when an operator opens a document, exactly as it does
+for a unit.
+
 ## Audited
 
 `openTenancy`, `addParty` and `endTenancy` are wrapped in the kernel's `audit.around`, so a
@@ -245,8 +339,10 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   nothing. Their callers audit their own use — as of 10.1 `staff` does exactly that, writing a
   row when an operator *opens* a unit and none when a list is rendered (`SPEC-staff.md`) — and
   a broader PII-read trail is a week-6 concern, the same position `identity` takes.
-- **No lease documents.** Week 3 indexes them per occupancy; `tenancyAccess` is the value
-  that will scope the retrieval.
+- **A document is a file, not yet an answer.** Slice 11.2 stores and serves it; chunking
+  (12.1), embeddings scoped by occupancy (12.2) and the extracted twin (13.1) are the
+  slices that make it answerable. `tenancyAccess` is still the value that will scope the
+  retrieval, and nothing reads a document by anything but a staff session yet.
 - **No rent, no money, ever.** SPEC.md rule 7. The lease's rent is an index-linked formula
   against a named base month, which is the week-3 twin's problem and never this module's.
 - **No "unconfirmed" party↔phone mapping.** The lease sample carries two tenants and two

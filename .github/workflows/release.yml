@@ -73,7 +73,7 @@ jobs:
             --service-account "app-prod@$PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$PROJECT:$REGION:dona-prod" \
             --set-secrets "DATABASE_URL=prod-database-url:latest,STAFF_SEED_EMAIL=prod-staff-seed-email:latest,STAFF_SEED_PASSWORD=prod-staff-seed-password:latest,STAFF_VIEWER_EMAIL=prod-staff-viewer-email:latest,STAFF_VIEWER_PASSWORD=prod-staff-viewer-password:latest" \
-            --update-env-vars "APP_VERSION=$TAG" \
+            --update-env-vars "APP_VERSION=$TAG,DOCS_BUCKET=$PROJECT-prod-docs" \
             --allow-unauthenticated \
             --min-instances 1 \
             --max-instances 5 \
