@@ -15,6 +15,7 @@ import {
   type SeedEnv,
   type SeedResult,
   seedStaffOperator,
+  seedStaffViewer,
 } from './internal/seed.ts';
 
 // Slice 9.1. The role-checked way into the domain modules: slice 10.1's create
@@ -40,4 +41,11 @@ export { createStaffCommands, createStaffQueries };
 
 export function seedStaff(pool: Pool, env: SeedEnv): Promise<SeedResult> {
   return seedStaffOperator(createStaffAuth(pool), env);
+}
+
+// Slice 10.2. Separate from seedStaff and not a flag on it: the two differ in
+// what a missing configuration means, and a boolean at this seam would hide
+// that. The admin is required; this one is not.
+export function seedViewer(pool: Pool, env: SeedEnv): Promise<SeedResult> {
+  return seedStaffViewer(createStaffAuth(pool), env);
 }
