@@ -5,13 +5,14 @@ import {
   createFakeExtractor,
   createOpenAiExtractor,
   createUnconfiguredExtractor,
+  defaultMaxOutputTokens,
 } from './extraction.ts';
 
 // The OpenAI adapter is exercised through an injected fetch, as the embedder's
 // is: what is worth testing here is the shape of the request and how a bad
 // reply is reported, not that OpenAI works. The real call is proved on staging
 // by the slice's own verify step.
-function fakeFetch(handler: () => Response): {
+function fakeFetch(handler: () => Response | Promise<Response>): {
   calls: Array<{ url: string; body: Record<string, unknown>; auth: string }>;
   impl: typeof fetch;
 } {
@@ -87,6 +88,60 @@ describe('extraction', () => {
       ['system', 'user'],
     );
     assert.equal(messages[1]?.content, request.input);
+  });
+
+  it('bounds the reply and sends no reasoning effort unless asked', async () => {
+    const fetcher = fakeFetch(() => reply('{"ok":true}'));
+    const extractor = createOpenAiExtractor({
+      apiKey: 'sk-test',
+      fetchImpl: fetcher.impl,
+    });
+
+    await extractor.extract(request);
+
+    const call = fetcher.calls[0];
+    assert.equal(call?.body.max_completion_tokens, defaultMaxOutputTokens);
+    // Absent, not empty. A model without the setting refuses the field, so the
+    // way to say "this model has no such knob" is to send nothing at all.
+    assert.equal('reasoning_effort' in (call?.body ?? {}), false);
+  });
+
+  it('sends the effort it was given, because unset is not none', async () => {
+    const fetcher = fakeFetch(() => reply('{"ok":true}'));
+    const extractor = createOpenAiExtractor({
+      apiKey: 'sk-test',
+      fetchImpl: fetcher.impl,
+    });
+
+    await extractor.extract({ ...request, reasoningEffort: 'none' });
+
+    // The distinction this test exists for: leaving the parameter out means the
+    // provider's default effort, which is what made five calls miss a
+    // 300-second request timeout on staging.
+    assert.equal(fetcher.calls[0]?.body.reasoning_effort, 'none');
+  });
+
+  it('gives up on a call that does not answer, naming the field', async () => {
+    const extractor = createOpenAiExtractor({
+      apiKey: 'sk-test',
+      timeoutMs: 20,
+      // A provider that never answers. Without the bound the only thing that
+      // ends this is the platform's request timeout, which reaches the operator
+      // as a blank page rather than as a sentence.
+      fetchImpl: (async (_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        })) as unknown as typeof fetch,
+    });
+
+    const error = await refusal(() => extractor.extract(request));
+
+    assert.equal(error.code, 'unavailable');
+    assert.match(error.message, /timed out/);
+    assert.equal(error.details?.name, 'lease_term');
+    assert.equal(error.details?.timeoutMs, 20);
   });
 
   it('reports a failed call as unavailable, with the status and no key', async () => {

@@ -1671,6 +1671,56 @@ describe('occupancy contract', () => {
       });
     });
 
+    it('runs the field calls together, not one after another', async (t) => {
+      await withPool(t, async (pool) => {
+        // Sequential calls made the request cost their sum, and on the real
+        // lease that sum exceeded Cloud Run's 300-second timeout: the operator
+        // got a blank page and no twin. The calls are independent, so the
+        // request should cost the slowest one.
+        let inFlight = 0;
+        let peak = 0;
+        const extractor = createFakeExtractor(async (request) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          inFlight -= 1;
+          const chunkId = /\[([^\]]+)\]/.exec(request.input)?.[1] ?? null;
+          return {
+            found: chunkId !== null,
+            chunkId,
+            confidence: 'high',
+            value: values[request.name.replace('lease_', '')],
+          };
+        });
+        const { occupancy, document } = await ingestedLease(pool, extractor);
+
+        const extraction = await occupancy.extractTwin(
+          { documentId: document.id },
+          actor,
+        );
+
+        assert.ok(extraction.attempted > 1);
+        assert.equal(peak, extraction.attempted);
+      });
+    });
+
+    it('carries the configured reasoning effort into every call', async (t) => {
+      await withPool(t, async (pool) => {
+        const extractor = citesFirstClause((field) => values[field]);
+        const { occupancy, document } = await ingestedLease(pool, extractor);
+
+        await occupancy.extractTwin({ documentId: document.id }, actor);
+
+        // Seeded `none` by migration 0014. Leaving it unset is not the same
+        // thing -- unset is the provider's default effort, which is what timed
+        // out on the first staging press.
+        assert.ok(extractor.calls.length > 0);
+        for (const call of extractor.calls) {
+          assert.equal(call.reasoningEffort, 'none');
+        }
+      });
+    });
+
     it('stores nothing for a citation naming a clause it was not given', async (t) => {
       await withPool(t, async (pool) => {
         // A model that answers well and cites a chunk nobody sent — the failure

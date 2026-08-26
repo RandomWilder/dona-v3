@@ -663,11 +663,19 @@ measured it as the chunk most likely to be retrieved for any vague question. It 
 number, and selection here requires one, so **the front page is never sent to the model at all**.
 That is a property of the selection rule and is asserted by a test, not a habit.
 
-### One call per field, not one per document
+### One call per field, and the calls run together
 
 Five calls, each carrying only the clauses that field could be in, each held to only that field's
 schema. The input stays about one question rather than being a lease pasted into a prompt, and the
 sixth field, when it is defined, is a registry entry rather than a longer prompt.
+
+**They are issued concurrently, and the first cut of this slice got that wrong.** The fields are
+independent, so running them in sequence made the request cost their *sum* — and on the real lease
+that sum passed Cloud Run's 300-second request timeout, so the operator's first press produced a
+blank page and no twin. Concurrently the request costs the slowest call. The kernel's per-call
+timeout is the other half of that fix (`SPEC-kernel.md`, "Bounded, because the caller is a browser
+request"), and neither half makes this work belong in a browser request: that is `work.ts`, and
+its own slice.
 
 **Every call must come back, though.** A pass replaces the document's facts wholesale, so a pass
 with a failed call is not a pass: the command throws and nothing is deleted, which leaves the
@@ -786,5 +794,8 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
 - **Extraction is manual, synchronous and unreviewed.** An operator presses a button and waits
   on five model calls; nothing triggers it on ingest, and until 13.2 every field is a claim
   with no way to confirm or correct it. An extraction is a claim until a human confirms it.
+  Running the calls together and bounding each one keeps that wait inside a request that can
+  answer, and it does not make the wait *right* — a model call chain on the end of a browser
+  request wants the kernel's durable work, which is the same slice auto-ingest is waiting for.
 - **Nothing is removable.** No way to detach a party or delete a tenancy; corrections are a
   manual database task until an admin screen owns them.

@@ -25,6 +25,14 @@ export interface ExtractionRequest {
   instructions: string;
   input: string;
   schema: JsonSchema;
+  // How much reasoning the model is asked to spend. Absent means the parameter
+  // is not sent at all, which is what a model with no reasoning setting needs:
+  // it rejects an unknown field rather than ignoring it.
+  //
+  // Sending nothing is *not* the same as asking for none. Unset means the
+  // provider's default -- which is where slice 13.1's first staging press went,
+  // and why five calls did not finish inside a 300-second request.
+  reasoningEffort?: string;
 }
 
 export interface Extractor {
@@ -42,9 +50,26 @@ export interface OpenAiExtractorOptions {
   // same seam createGcsStore and createOpenAiEmbedder use.
   fetchImpl?: typeof fetch;
   endpoint?: string;
+  timeoutMs?: number;
+  maxOutputTokens?: number;
 }
 
 const defaultEndpoint = 'https://api.openai.com/v1/chat/completions';
+
+// Code and not config rows, on the argument occupancy's document size cap
+// makes: rule 4 governs tunables, and a bound that stops one request consuming
+// a server is a safety limit rather than a policy.
+//
+// Sixty seconds because the caller is a browser request that the platform cuts
+// off at 300. A call that has not answered in a minute must become an error
+// somebody can read, *before* the platform turns it into a blank page with no
+// message in it -- which is exactly what 13.1's first staging press produced.
+export const defaultTimeoutMs = 60_000;
+
+// A bound on a runaway, not a budget: the reply is a handful of fields.
+// Reasoning tokens count against it, so a model asked to think hard can reach
+// it -- and reaching it is reported as truncation, which is legible.
+export const defaultMaxOutputTokens = 8_000;
 
 interface CompletionResponse {
   choices?: Array<{
@@ -59,36 +84,67 @@ export function createOpenAiExtractor(
   const { apiKey } = options;
   const call = options.fetchImpl ?? fetch;
   const endpoint = options.endpoint ?? defaultEndpoint;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+  const maxOutputTokens = options.maxOutputTokens ?? defaultMaxOutputTokens;
+
+  function requestBody(request: ExtractionRequest): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: request.model,
+      messages: [
+        { role: 'system', content: request.instructions },
+        { role: 'user', content: request.input },
+      ],
+      // Strict, because the alternative is this file parsing prose. A schema
+      // the provider enforces is the difference between a malformed reply being
+      // an error and being a plausible wrong shape.
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: request.name,
+          schema: request.schema,
+          strict: true,
+        },
+      },
+      max_completion_tokens: maxOutputTokens,
+    };
+    // Omitted entirely when the caller did not ask for one, rather than sent
+    // empty: a model without the setting refuses the field.
+    if (request.reasoningEffort) {
+      body.reasoning_effort = request.reasoningEffort;
+    }
+    return body;
+  }
 
   return {
     async extract(request) {
-      const response = await call(endpoint, {
-        method: 'POST',
-        headers: {
-          // The one place the key is used, and it is never logged: an error
-          // below reports status and nothing about the request.
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: request.model,
-          messages: [
-            { role: 'system', content: request.instructions },
-            { role: 'user', content: request.input },
-          ],
-          // Strict, because the alternative is this file parsing prose. A
-          // schema the provider enforces is the difference between a malformed
-          // reply being an error and being a plausible wrong shape.
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: request.name,
-              schema: request.schema,
-              strict: true,
-            },
+      let response: Response;
+      try {
+        response = await call(endpoint, {
+          method: 'POST',
+          headers: {
+            // The one place the key is used, and it is never logged: an error
+            // below reports status and nothing about the request.
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify(requestBody(request)),
+          // The bound. Without it, the only thing that ends a slow call is the
+          // platform's own request timeout, which arrives as a blank page
+          // rather than as a sentence naming the field being read.
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (error) {
+        if (error instanceof KernelError) {
+          throw error;
+        }
+        // Any failure to *reach* the provider, timeout included, and the
+        // timeout is the one worth naming: it is the difference between "the
+        // model said no" and "nobody answered in a minute".
+        throw new KernelError('unavailable', 'the extraction call timed out', {
+          name: request.name,
+          timeoutMs,
+        });
+      }
       if (!response.ok) {
         throw new KernelError('unavailable', 'the extraction call failed', {
           status: response.status,

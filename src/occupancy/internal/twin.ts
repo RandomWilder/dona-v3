@@ -426,6 +426,7 @@ export function buildRequest(
   field: LeaseField,
   model: string,
   clauses: ClauseSource[],
+  reasoningEffort?: string,
 ): ExtractionRequest {
   const spec = leaseFieldSpec(field);
   const rendered = clauses
@@ -436,6 +437,7 @@ export function buildRequest(
     .join('\n\n');
   return {
     model,
+    reasoningEffort,
     name: `lease_${field}`,
     instructions: `${instructions}\n\nהשדה המבוקש: ${spec.question}`,
     input: rendered,

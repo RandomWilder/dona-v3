@@ -6,7 +6,7 @@ import {
   embeddingSettingKeys,
   extractionSettingKeys,
   readEmbeddingSettings,
-  readExtractionModel,
+  readExtractionSettings,
   type Settings,
 } from './config.ts';
 import type { KernelError } from './errors.ts';
@@ -118,27 +118,55 @@ describe('settings', () => {
     });
   });
 
-  it('reads the extraction model from its row, seeded by 0013', async (t) => {
+  it('reads the extraction model and effort the migrations left', async (t) => {
     const pool = await migratedPoolOrNull();
     if (!pool) {
       t.skip(skipReason);
       return;
     }
     try {
-      // Read per call rather than at boot: this model is welded to nothing
-      // already stored, so a wrong id is fixed by editing this row.
-      assert.equal(await readExtractionModel(createSettings(pool)), 'gpt-5');
+      // Read per call rather than at boot: neither is welded to anything
+      // already stored, so a wrong model -- or one that reasons for minutes on
+      // a browser request -- is fixed by editing a row. 0014 is what chose
+      // these two values, and it chose them from a measured timeout.
+      assert.deepEqual(await readExtractionSettings(createSettings(pool)), {
+        model: 'gpt-5.6-luna',
+        reasoningEffort: 'none',
+      });
     } finally {
       await pool.end();
     }
   });
 
-  it('takes the extraction model from the row over its fallback', async () => {
-    assert.equal(
-      await readExtractionModel(
-        settingsOf({ [extractionSettingKeys.model]: 'some-other-model' }),
+  it('takes the extraction model and effort from the rows', async () => {
+    assert.deepEqual(
+      await readExtractionSettings(
+        settingsOf({
+          [extractionSettingKeys.model]: 'some-other-model',
+          [extractionSettingKeys.reasoningEffort]: 'low',
+        }),
       ),
-      'some-other-model',
+      { model: 'some-other-model', reasoningEffort: 'low' },
+    );
+  });
+
+  it('turns `omit` into no effort at all, for a model that has no such knob', async () => {
+    // Not the same as `none`: one asks the model for zero reasoning, the other
+    // sends the provider no such field. A model without the setting refuses it.
+    const read = await readExtractionSettings(
+      settingsOf({ [extractionSettingKeys.reasoningEffort]: 'omit' }),
+    );
+    assert.equal(read.reasoningEffort, undefined);
+  });
+
+  it('refuses an effort the provider does not accept', async () => {
+    // Checked here rather than discovered at the provider: an unchecked row is
+    // a 400 on every extraction, and the row is the last place anyone looks.
+    await assert.rejects(
+      readExtractionSettings(
+        settingsOf({ [extractionSettingKeys.reasoningEffort]: 'medium-ish' }),
+      ),
+      (error: KernelError) => error.code === 'invalid',
     );
   });
 });

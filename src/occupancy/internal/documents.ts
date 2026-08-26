@@ -3,7 +3,7 @@ import type { ActorKind, AuditLog } from '../../kernel/audit.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import {
   readEmbeddingSettings,
-  readExtractionModel,
+  readExtractionSettings,
   type Settings,
 } from '../../kernel/config.ts';
 import type { Embedder } from '../../kernel/embeddings.ts';
@@ -578,31 +578,46 @@ export function createDocuments(deps: DocumentDeps): Documents {
             );
           }
 
-          // Per call, not at boot: a model id the account cannot serve has to
-          // be correctable with one config row (SPEC-kernel.md).
-          const model = await readExtractionModel(deps.settings);
-          const extracted: ExtractedField[] = [];
-          let attempted = 0;
+          // Per call, not at boot: a model the account cannot serve -- or one
+          // that reasons for minutes while a browser waits -- has to be
+          // correctable with a config row (SPEC-kernel.md).
+          const { model, reasoningEffort } = await readExtractionSettings(
+            deps.settings,
+          );
+
           // One call per field, each carrying only the clauses that field could
-          // be in. Every call must come back before anything is written: a pass
-          // replaces the document's facts wholesale, and a pass with a failed
-          // call is not a pass. A throw here leaves the previous extraction
-          // intact, which is the guarantee 12.2 gives for a failed embedding.
-          for (const field of leaseFields) {
-            const selected = selectClauses(field, chunks);
-            if (selected.length === 0) {
-              continue;
-            }
-            attempted += 1;
-            const reply = await deps.extractor.extract(
-              buildRequest(field, model, selected),
-            );
+          // be in -- and the calls run *together*. They are independent, and
+          // running them in sequence made the request take their sum: five at
+          // the provider's default reasoning effort exceeded Cloud Run's
+          // 300-second timeout on the first staging press, which the operator
+          // saw as a blank page. Concurrently, the request costs the slowest
+          // call rather than all of them.
+          const asked = leaseFields
+            .map((field) => ({ field, clauses: selectClauses(field, chunks) }))
+            .filter((call) => call.clauses.length > 0);
+
+          // `Promise.all` rejects on the first failure, which is the behaviour
+          // this needs: a pass replaces the document's facts wholesale, so a
+          // pass with a failed call is not a pass. It throws before a row is
+          // deleted, leaving the previous extraction intact -- the guarantee
+          // 12.2 gives for a failed embedding.
+          const replies = await Promise.all(
+            asked.map((call) =>
+              deps.extractor.extract(
+                buildRequest(call.field, model, call.clauses, reasoningEffort),
+              ),
+            ),
+          );
+
+          const extracted: ExtractedField[] = [];
+          for (const [at, call] of asked.entries()) {
             // Believed only if its citation names a clause that was sent.
-            const read = readReply(field, reply, selected);
+            const read = readReply(call.field, replies[at], call.clauses);
             if (read) {
               extracted.push(read);
             }
           }
+          const attempted = asked.length;
 
           await replaceFacts(document, extracted, model);
 
