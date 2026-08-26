@@ -371,6 +371,33 @@ lease "must go to נספח א׳ first"; a chunker that cannot see the annex's ow
 `סעיף` also appears mid-sentence — "כאמור בסעיף 12" — so the form is anchored to the start of
 a line and requires a number after the word.
 
+**The two forms are guarded differently.** A bare leading number is ambiguous, because a
+sentence that wraps can begin with one; the keyword form is not, because the word leads and a
+number is required after it. So only the bare number has to earn its reading.
+
+Measured on the real lease, reading every leading number as a clause invented two: `§18` out of
+*"…ועל כן יחולו הוראות סעיף / 18 להלן."*, and `נספח י״ב §43` out of the parcel numbers
+*"גוש 80031 חלקה / 43 ו-46 המצויים…"*. Both are one sentence wrapping onto a line that happens
+to start with a digit, and both then competed for rank against real clauses as three-word
+fragments — one of them citing a land-registry entry as a contractual term.
+
+The test is narrow because each signal alone is wrong. **A separator after the number cannot be
+required**: `נספח י״א §2.2.4` is a real clause without one. **A previous line ending
+mid-sentence is not damning either**: clause text wraps constantly. Only the pair is
+conclusive — a bare number, no separator, and a line above still in the middle of a sentence.
+
+### A heading is not a clause
+
+`§6` on its own is the line *"6. מטרת השכירות וייחודה"* and nothing else. On the real lease it
+came **seventh for a question about rent**, on a shared word and no content — retrieval that can
+return a heading is retrieval that can answer a question with a table of contents.
+
+A bare parent heading therefore folds into the first sub-clause it heads. The reference becomes
+the child's, because that is where the text is, and the heading is kept in `heading` so a caller
+can show the context without citing it. An annex heading is not folded: it is not a parent in
+the numbering sense, and merging it would cite the annex's preamble as the clause about the
+term.
+
 ### What a chunk points at
 
 `clause_ref` is what a citation will say — `נספח א׳ §3.2`, `§14.1`, `נספח י״ב §2`. The annex

@@ -88,6 +88,15 @@ const clauseWord = /^סעיף\s+(\d+(?:\.\d+)*)\s*[–—\-:.]?/;
 
 const hebrew = /[א-ת]/;
 
+// A line that ends mid-sentence: no terminal punctuation, so whatever follows is
+// a continuation of it rather than something new.
+const endsSentence = /[.:;!?]\s*$/;
+
+// `2.5.` and `10.1.` carry a separator after the number; `2.2.4 מסירת דירה` does
+// not, and both are real clauses in this document. So the separator alone cannot
+// decide -- but combined with the line before it, it can.
+const numberedWithSeparator = /^\d+(?:\.\d+)*[.)]/;
+
 interface Line {
   page: number;
   text: string;
@@ -266,7 +275,12 @@ function gather(lines: Line[]): Draft[] {
     open = { draft, lines: first };
   };
 
+  let previousLine: string | null = null;
   for (const line of lines) {
+    // Captured and advanced once per line, before any branch can `continue`
+    // past it -- otherwise the check below reads a stale neighbour.
+    const previous = previousLine;
+    previousLine = line.text;
     const annexMatch = annexHeading.exec(line.text);
     if (annexMatch) {
       annex = `נספח ${annexMatch[1]}`;
@@ -282,8 +296,17 @@ function gather(lines: Line[]): Draft[] {
       );
       continue;
     }
-    const numberMatch =
-      clauseNumber.exec(line.text) ?? clauseWord.exec(line.text);
+    // The two forms are guarded differently, and deliberately. A bare leading
+    // number is ambiguous -- a wrapped sentence can start with one -- so it has
+    // to earn the reading. `סעיף 5 – …` cannot: the word leads, a number is
+    // required after it, and the whole thing is anchored to the line start, so
+    // there is nothing for a continuation to be confused with.
+    const bareNumber = clauseNumber.exec(line.text);
+    const numberMatch = bareNumber
+      ? startsClause(line.text, previous)
+        ? bareNumber
+        : null
+      : clauseWord.exec(line.text);
     if (numberMatch) {
       start(
         {
@@ -318,6 +341,30 @@ function gather(lines: Line[]): Draft[] {
   return drafts;
 }
 
+// Whether a numbered line begins a clause or merely continues the line above it.
+//
+// Measured on the real lease, where reading every leading number as a clause
+// invented two: `§18` out of "...ועל כן יחולו הוראות סעיף / 18 להלן.", and
+// `נספח י״ב §43` out of the parcel numbers "גוש 80031 חלקה / 43 ו-46 המצויים...".
+// Both are a sentence wrapping onto a new visual line that happens to start with
+// a digit. Both then competed for rank against real clauses as three-word
+// fragments, and one of them cited a parcel as a contractual term.
+//
+// The test is deliberately narrow, because both signals on their own are wrong.
+// A separator after the number is not required -- `נספח י״א §2.2.4` is a real
+// clause without one. A previous line ending mid-sentence is not damning either
+// -- clause text wraps constantly. Only the pair is conclusive: a bare number,
+// no separator, and a line above that was still in the middle of a sentence.
+function startsClause(text: string, previous: string | null): boolean {
+  if (numberedWithSeparator.test(text)) {
+    return true;
+  }
+  if (previous === null) {
+    return true;
+  }
+  return endsSentence.test(previous);
+}
+
 // --- sizing ---------------------------------------------------------------
 
 // Adjacent sub-clauses of one parent, each too small to retrieve on its own,
@@ -328,6 +375,30 @@ function coalesce(drafts: Draft[]): Draft[] {
   const merged: Draft[] = [];
   for (const draft of drafts) {
     const previous = merged.at(-1);
+    // A bare parent heading folds into its first sub-clause. `§6` on its own is
+    // the line "6. מטרת השכירות וייחודה" and nothing else -- measured on the
+    // real lease, where it came seventh for a question about rent purely on the
+    // word it shares with the question. A heading is a label for the clause
+    // below it, not a clause, and retrieval that can return one is retrieval
+    // that can answer a question with a table of contents.
+    //
+    // The reference becomes the child's, because that is where the text is; the
+    // heading is kept in `heading`, where a caller can show it for context
+    // without citing it.
+    if (
+      previous &&
+      previous.text.length < minChunkChars &&
+      previous.text.length + draft.text.length + 1 <= maxChunkChars &&
+      isParentOf(previous.clauseRef, draft.clauseRef)
+    ) {
+      merged[merged.length - 1] = {
+        ...draft,
+        heading: previous.heading ?? previous.text,
+        text: `${previous.text}\n${draft.text}`,
+        pageFrom: previous.pageFrom,
+      };
+      continue;
+    }
     if (
       previous &&
       previous.text.length < minChunkChars &&
@@ -362,6 +433,22 @@ function sameParent(a: string | null, b: string | null): boolean {
     right.parts.length > 1 &&
     left.parts.slice(0, -1).join('.') === right.parts.slice(0, -1).join('.')
   );
+}
+
+// `§5` is the parent of `§5.1`, and of the range `§5.1–5.2`. A top-level number
+// is nobody's parent across an annex boundary, and nothing is its own parent.
+function isParentOf(parent: string | null, child: string | null): boolean {
+  const above = parseRef(parent);
+  const below = parseRef(child);
+  if (!above || !below || above.annex !== below.annex) {
+    return false;
+  }
+  const parentParts = above.end.split('.');
+  const childParts = below.start.split('.');
+  if (parentParts.length >= childParts.length) {
+    return false;
+  }
+  return parentParts.every((part, at) => part === childParts[at]);
 }
 
 function rangeRef(a: string | null, b: string | null): string | null {

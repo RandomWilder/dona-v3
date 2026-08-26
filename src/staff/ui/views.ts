@@ -352,9 +352,14 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
   const { unit, building } = detail.unit;
   const kind = documentKindNames[detail.document.kind] ?? detail.document.kind;
 
+  // Headed, and headed *after* the search card, because without a heading the
+  // two lists are one wall of identical cards -- the owner read eight search
+  // hits followed by the full document as "about 150 results", which is a
+  // reasonable thing to conclude from what the page was showing.
   const body = detail.chunks.length
-    ? h`${detail.chunks.map(
-        (chunk) => h`<div class="card">
+    ? h`<h2 class="list-heading">כל הסעיפים במסמך · ${ltr(String(detail.chunks.length))}</h2>
+        ${detail.chunks.map(
+          (chunk) => h`<div class="card">
             <p class="muted">
               ${
                 chunk.clauseRef
@@ -365,7 +370,7 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
             </p>
             <p class="clause">${chunk.text}</p>
           </div>`,
-      )}`
+        )}`
     : h`<p class="empty-state">המסמך טרם נקרא לסעיפים.</p>`;
 
   return h`<section class="panel stack">
@@ -405,8 +410,9 @@ function searchCard(detail: DocumentChunks): Html {
     ? h``
     : asked.hits.length === 0
       ? h`<p class="empty-state">לא נמצאו סעיפים מתאימים בחוזה הזה.</p>`
-      : h`<ol class="hits">${asked.hits.map(
-          (hit) => h`<li>
+      : h`<p class="muted">${ltr(String(asked.hits.length))} הסעיפים הקרובים ביותר לשאלה, מתוך החוזה הזה בלבד:</p>
+          <ol class="hits">${asked.hits.map(
+            (hit) => h`<li>
                 <p class="muted">
                   ${
                     hit.clauseRef
@@ -418,7 +424,7 @@ function searchCard(detail: DocumentChunks): Html {
                 </p>
                 <p class="clause">${hit.text}</p>
               </li>`,
-        )}</ol>`;
+          )}</ol>`;
 
   return h`<div class="card">
           <h2>חיפוש בסעיפי החוזה</h2>
