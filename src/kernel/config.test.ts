@@ -4,7 +4,9 @@ import {
   createSettings,
   embeddingColumnDimensions,
   embeddingSettingKeys,
+  extractionSettingKeys,
   readEmbeddingSettings,
+  readExtractionModel,
   type Settings,
 } from './config.ts';
 import type { KernelError } from './errors.ts';
@@ -114,5 +116,29 @@ describe('settings', () => {
       model: 'text-embedding-3-large',
       dimensions: embeddingColumnDimensions,
     });
+  });
+
+  it('reads the extraction model from its row, seeded by 0013', async (t) => {
+    const pool = await migratedPoolOrNull();
+    if (!pool) {
+      t.skip(skipReason);
+      return;
+    }
+    try {
+      // Read per call rather than at boot: this model is welded to nothing
+      // already stored, so a wrong id is fixed by editing this row.
+      assert.equal(await readExtractionModel(createSettings(pool)), 'gpt-5');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('takes the extraction model from the row over its fallback', async () => {
+    assert.equal(
+      await readExtractionModel(
+        settingsOf({ [extractionSettingKeys.model]: 'some-other-model' }),
+      ),
+      'some-other-model',
+    );
   });
 });

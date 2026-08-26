@@ -10,6 +10,7 @@ import { createAuditLog } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
 import type { Embedder } from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
+import type { Extractor } from '../../kernel/extraction.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
 import type { Html } from '../../kernel/ui/html.ts';
 import {
@@ -49,6 +50,9 @@ export interface StaffDeps {
   // How clause text becomes vectors. Absent, occupancy falls back to an embedder
   // that refuses rather than one that returns zeros.
   embedder?: Embedder;
+  // How clauses become the twin's fields. Absent, occupancy falls back to an
+  // extractor that refuses rather than one that returns nothing.
+  extractor?: Extractor;
 }
 
 interface Credentials {
@@ -161,6 +165,7 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     portfolio,
     store: deps.store,
     embedder: deps.embedder,
+    extractor: deps.extractor,
   });
   const guarded = { identity, portfolio, occupancy, pool: deps.pool, clock };
   const commands = createStaffCommands(guarded);
@@ -513,6 +518,31 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
         throw new KernelError('not_found', 'document not found');
       }
       await commands.ingestDocument({ documentId }, session);
+    },
+  );
+
+  // Reading a document's clauses into the twin's fields. Its own button and its
+  // own command, for the reason ingestion is: this is a judgement a human
+  // reviews, not a step of storing a file (SPEC-staff.md, "Reading the lease's
+  // fields"). It lands back on the chunks page, because that is where the
+  // fields and the clauses they cite are read against each other.
+  create(
+    '/admin/units/:unitId/documents/:documentId/extract',
+    (request) =>
+      `/admin/units/${encodeURIComponent(param(request, 'unitId'))}/documents/${encodeURIComponent(param(request, 'documentId'))}/chunks`,
+    async (_body, session, request) => {
+      const unitId = param(request, 'unitId');
+      const documentId = param(request, 'documentId');
+      // The same server-side check the ingest and the search make: a pair of
+      // ids in a URL is a caller-supplied claim until this turns it into a fact.
+      const tenancy = await occupancy.findCurrentTenancy(unitId);
+      const documents = tenancy
+        ? await occupancy.listDocuments(tenancy.tenancy.id)
+        : [];
+      if (!documents.some((document) => document.id === documentId)) {
+        throw new KernelError('not_found', 'document not found');
+      }
+      await commands.extractTwin({ documentId }, session);
     },
   );
 

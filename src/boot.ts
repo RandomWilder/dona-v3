@@ -10,6 +10,11 @@ import {
   createUnconfiguredEmbedder,
   type Embedder,
 } from './kernel/embeddings.ts';
+import {
+  createOpenAiExtractor,
+  createUnconfiguredExtractor,
+  type Extractor,
+} from './kernel/extraction.ts';
 import { migrate } from './kernel/migrate.ts';
 import {
   createGcsStore,
@@ -69,12 +74,13 @@ export async function startServer(options: BootOptions): Promise<string> {
   });
   const store = resolveStore(process.env);
   const embedder = await resolveEmbedder(process.env, pool);
-  const app = buildApp({ pool, version, store, embedder });
+  const extractor = resolveExtractor(process.env);
+  const app = buildApp({ pool, version, store, embedder, extractor });
   await app.listen({ port: options.port, host: options.host });
-  // All three reported, so a deploy that seeded one and not the other — or that
-  // is holding lease documents in memory — says so on the line an operator
-  // actually reads.
-  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason} · docs: ${store.describe()} · embeddings: ${embedder.describe()}`;
+  // All of them reported, so a deploy that seeded one account and not the other
+  // — or that is holding lease documents in memory, or running without a model
+  // key — says so on the line an operator actually reads.
+  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason} · docs: ${store.describe()} · embeddings: ${embedder.describe()} · extraction: ${extractor.describe()}`;
 }
 
 // Where lease documents go. Absent DOCS_BUCKET is not an error: locally there is
@@ -109,6 +115,24 @@ export async function resolveEmbedder(
     createSettings(pool),
   );
   return createOpenAiEmbedder({ apiKey, model, dimensions });
+}
+
+// How clauses become the twin's fields. Absent OPENAI_API_KEY is not a boot
+// error, for the reason the embedder's absence is not: a clean clone must still
+// start. It is not a silent fallback either -- the extractor that comes back
+// refuses every call and says so on the boot line, because a lease read into no
+// fields looks exactly like a lease that states nothing.
+//
+// No settings read here, unlike the embedder's: the model id is read per call
+// (SPEC-kernel.md, "Two settings, read at two different times"), so correcting
+// a model the account cannot serve is one config row rather than a deploy.
+export function resolveExtractor(
+  env: Record<string, string | undefined>,
+): Extractor {
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  return apiKey
+    ? createOpenAiExtractor({ apiKey })
+    : createUnconfiguredExtractor();
 }
 
 // First `docker compose up` — and a cold Cloud SQL instance — need a few

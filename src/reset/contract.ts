@@ -54,6 +54,13 @@ export const truncatedTables = [
   // -- and being told to would reach past this list into tables we promised not
   // to touch. Listing it here keeps the no-CASCADE rule and empties it anyway.
   'occupancy_chunk_embeddings',
+  // Slice 13.1. The twin's fields, which quote the contract they were read out
+  // of -- the rent's stated figure, the securities' amounts, the deductible
+  // clauses' own words. A third place a real lease lives, so it empties with
+  // the other two (tasks/fuses.md counts them). In the same TRUNCATE for the
+  // same reason: its ON DELETE RESTRICT to the chunk would otherwise make a
+  // reset impossible without a CASCADE this list refuses to use.
+  'occupancy_lease_facts',
   'idempotency_keys',
 ] as const;
 

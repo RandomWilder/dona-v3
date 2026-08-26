@@ -10,6 +10,11 @@ import {
   type Embedder,
 } from '../kernel/embeddings.ts';
 import type { KernelError } from '../kernel/errors.ts';
+import {
+  createFakeExtractor,
+  type ExtractionRequest,
+  type Extractor,
+} from '../kernel/extraction.ts';
 import { newId } from '../kernel/ids.ts';
 import { createMemoryStore, type ObjectStore } from '../kernel/objects.ts';
 import type { PdfPage, PdfText } from '../kernel/pdf.ts';
@@ -64,6 +69,7 @@ function world(
   store?: ObjectStore,
   pdf?: PdfText,
   embedder?: Embedder,
+  extractor?: Extractor,
 ) {
   const identity = createIdentity({ pool, clock });
   const portfolio = createPortfolio({ pool, clock });
@@ -75,6 +81,7 @@ function world(
     store: store ?? createMemoryStore(),
     pdf: pdf ?? emptyPdf,
     embedder,
+    extractor,
   });
   return { identity, portfolio, occupancy };
 }
@@ -1513,6 +1520,335 @@ describe('occupancy contract', () => {
           after.map((chunk) => chunk.id),
           indexed.map((chunk) => chunk.id),
         );
+      });
+    });
+  });
+
+  describe('the digital twin', () => {
+    // A well-behaved model: it answers out of the clauses it was given and
+    // cites the first one, copying the id from the brackets. What a real model
+    // does is proved on staging by the slice's verify step; what is worth
+    // pinning here is what this module does with a reply.
+    function citesFirstClause(
+      value: (field: string) => unknown,
+    ): Extractor & { calls: ExtractionRequest[] } {
+      return createFakeExtractor((request) => {
+        const chunkId = /\[([^\]]+)\]/.exec(request.input)?.[1] ?? null;
+        const field = request.name.replace('lease_', '');
+        return {
+          found: chunkId !== null,
+          chunkId,
+          confidence: 'high',
+          value: value(field),
+        };
+      });
+    }
+
+    const values: Record<string, unknown> = {
+      term: {
+        initialFrom: '2026-01-01',
+        initialTo: '2027-12-31',
+        options: [],
+        capYears: 10,
+        statedText: '24 חודשים מיום המסירה',
+      },
+      rent: {
+        baseAmount: '4,250',
+        currency: 'ש"ח',
+        indexBaseMonth: 'ינואר 2026',
+        rule: 'עדכון שנתי לפי המדד',
+      },
+      securities: [],
+      notice: [],
+      deductibles: [],
+    };
+
+    const twinLease = [
+      pdfPage(1, [
+        'נספח א׳ — פרטי העסקה',
+        '3. תקופת השכירות היא 24 חודשים מיום המסירה.',
+      ]),
+      pdfPage(2, ['4. דמי השכירות ישולמו בכל 1 לחודש קלנדרי.']),
+    ];
+
+    async function ingestedLease(
+      pool: Pool,
+      extractor: Extractor,
+      store?: ObjectStore,
+      clock = fixedClock(new Date('2026-09-15T09:00:00Z')),
+    ) {
+      const shared = store ?? createMemoryStore();
+      const built = world(
+        pool,
+        clock,
+        shared,
+        pdfOf(twinLease),
+        createFakeEmbedder(embeddingColumnDimensions),
+        extractor,
+      );
+      const building = await built.portfolio.addBuilding(
+        uniqueAddress(),
+        actor,
+      );
+      const unit = await built.portfolio.addUnit(
+        { buildingId: building.id, label: '24', floor: 2 },
+        actor,
+      );
+      const tenancy = await built.occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-01-01' },
+        actor,
+      );
+      const document = await built.occupancy.attachDocument(
+        {
+          tenancyId: tenancy.id,
+          kind: 'lease',
+          contentType: 'application/pdf',
+          bytes: Buffer.from('%PDF-1.7\nthe signed lease\n%%EOF'),
+        },
+        actor,
+      );
+      await built.occupancy.ingestDocument({ documentId: document.id }, actor);
+      return { ...built, store: shared, unit, tenancy, document };
+    }
+
+    it('stores a field per family, each citing a clause of this tenancy', async (t) => {
+      await withPool(t, async (pool) => {
+        const extractor = citesFirstClause((field) => values[field]);
+        const { occupancy, tenancy, document } = await ingestedLease(
+          pool,
+          extractor,
+        );
+
+        const extraction = await occupancy.extractTwin(
+          { documentId: document.id },
+          actor,
+        );
+
+        assert.equal(extraction.tenancyId, tenancy.id);
+        // `term` and `rent` said something; the list fields came back empty,
+        // which is the lease being silent rather than a failure.
+        assert.equal(extraction.fields, 2);
+        assert.ok(extraction.attempted >= extraction.fields);
+
+        const facts = await occupancy.listLeaseFacts(document.id);
+        assert.deepEqual(
+          facts.map((fact) => fact.field),
+          ['term', 'rent'],
+        );
+        for (const fact of facts) {
+          // The column every read of a tenant's twin filters on, copied from
+          // the document row and never taken from a caller.
+          assert.equal(fact.tenancyId, tenancy.id);
+          // A field is only as good as the clause it points at.
+          assert.ok(fact.chunkId);
+          assert.match(String(fact.clauseRef), /נספח א׳/);
+          assert.ok(fact.pageFrom >= 1);
+        }
+        // The lease's own shape: an initial period and its options, never a
+        // single end date.
+        const [termFact, rentFact] = facts;
+        assert.ok(termFact && rentFact);
+        const term = termFact.value as {
+          options: unknown[];
+          capYears: number;
+        };
+        assert.deepEqual(term.options, []);
+        assert.equal(term.capYears, 10);
+        assert.equal(Object.hasOwn(termFact.value, 'endsOn'), false);
+        // The rent as the contract prints it, with no figure this system made.
+        assert.equal(
+          (rentFact.value as { baseAmount: string }).baseAmount,
+          '4,250',
+        );
+
+        // Every clause sent carries a reference. On the real lease that is what
+        // keeps the front page — the names, the ID numbers, the phones — off
+        // the wire entirely, since it carries no clause number.
+        for (const call of extractor.calls) {
+          assert.equal(call.input.includes('[]'), false);
+          assert.match(call.input, /נספח א׳/);
+        }
+      });
+    });
+
+    it('stores nothing for a citation naming a clause it was not given', async (t) => {
+      await withPool(t, async (pool) => {
+        // A model that answers well and cites a chunk nobody sent — the failure
+        // this command exists to refuse. A wrong value with an honest citation
+        // is a correction 13.2 can make; a value with an invented citation is
+        // rendered as grounded by every screen after it.
+        const extractor = createFakeExtractor((request) => ({
+          found: true,
+          chunkId: newId(),
+          confidence: 'high',
+          value: values[request.name.replace('lease_', '')],
+        }));
+        const { occupancy, document } = await ingestedLease(pool, extractor);
+
+        const extraction = await occupancy.extractTwin(
+          { documentId: document.id },
+          actor,
+        );
+
+        assert.equal(extraction.fields, 0);
+        assert.deepEqual(await occupancy.listLeaseFacts(document.id), []);
+      });
+    });
+
+    it("replaces one document's fields on a second pass", async (t) => {
+      await withPool(t, async (pool) => {
+        const store = createMemoryStore();
+        const { occupancy, document } = await ingestedLease(
+          pool,
+          citesFirstClause((field) => values[field]),
+          store,
+        );
+        await occupancy.extractTwin({ documentId: document.id }, actor);
+        const first = await occupancy.listLeaseFacts(document.id);
+        assert.equal(first.length, 2);
+
+        // The same document read again, by a model that now finds only the
+        // term. Facts are derived data with a natural key, so this is a
+        // replacement — the rent is a field this document no longer claims.
+        const { occupancy: again } = world(
+          pool,
+          fixedClock(new Date('2026-09-16T09:00:00Z')),
+          store,
+          pdfOf(twinLease),
+          createFakeEmbedder(embeddingColumnDimensions),
+          citesFirstClause((field) => (field === 'term' ? values.term : {})),
+        );
+        await again.extractTwin({ documentId: document.id }, actor);
+
+        const second = await occupancy.listLeaseFacts(document.id);
+        assert.deepEqual(
+          second.map((fact) => fact.field),
+          ['term'],
+        );
+        assert.notEqual(second[0]?.id, first[0]?.id);
+      });
+    });
+
+    it('leaves the previous pass intact when a call fails', async (t) => {
+      await withPool(t, async (pool) => {
+        const store = createMemoryStore();
+        const { occupancy, document } = await ingestedLease(
+          pool,
+          citesFirstClause((field) => values[field]),
+          store,
+        );
+        await occupancy.extractTwin({ documentId: document.id }, actor);
+        const before = await occupancy.listLeaseFacts(document.id);
+        assert.equal(before.length, 2);
+
+        // A pass replaces the document's fields wholesale, so a pass with a
+        // failed call is not a pass. It throws before a row is deleted — the
+        // guarantee 12.2 gives for a failed embedding.
+        const { occupancy: broken } = world(
+          pool,
+          fixedClock(new Date('2026-09-17T09:00:00Z')),
+          store,
+          pdfOf(twinLease),
+          createFakeEmbedder(embeddingColumnDimensions),
+          createFakeExtractor(() => {
+            throw new Error('the extraction call failed');
+          }),
+        );
+        await assert.rejects(
+          broken.extractTwin({ documentId: document.id }, actor),
+        );
+
+        const after = await occupancy.listLeaseFacts(document.id);
+        assert.deepEqual(
+          after.map((fact) => fact.id),
+          before.map((fact) => fact.id),
+        );
+      });
+    });
+
+    it('refuses a document nobody has ingested, and one that does not exist', async (t) => {
+      await withPool(t, async (pool) => {
+        const extractor = citesFirstClause((field) => values[field]);
+        const built = world(
+          pool,
+          fixedClock(new Date('2026-09-15T09:00:00Z')),
+          createMemoryStore(),
+          pdfOf(twinLease),
+          createFakeEmbedder(embeddingColumnDimensions),
+          extractor,
+        );
+        const building = await built.portfolio.addBuilding(
+          uniqueAddress(),
+          actor,
+        );
+        const unit = await built.portfolio.addUnit(
+          { buildingId: building.id, label: '25' },
+          actor,
+        );
+        const tenancy = await built.occupancy.openTenancy(
+          { unitId: unit.id, startsOn: '2026-01-01' },
+          actor,
+        );
+        const document = await built.occupancy.attachDocument(
+          {
+            tenancyId: tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: Buffer.from('%PDF-1.7\nnot read yet\n%%EOF'),
+          },
+          actor,
+        );
+
+        // Being ingested is a precondition, not a step this command performs: a
+        // document with no clauses and a lease that says nothing about its own
+        // term are different facts, and only one of them is an error.
+        await assert.rejects(
+          built.occupancy.extractTwin({ documentId: document.id }, actor),
+          (error: KernelError) => error.code === 'invalid',
+        );
+        await assert.rejects(
+          built.occupancy.extractTwin({ documentId: newId() }, actor),
+          (error: KernelError) => error.code === 'not_found',
+        );
+        assert.equal(extractor.calls.length, 0);
+      });
+    });
+
+    it('audits the extraction and copies no field value into the row', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, document } = await ingestedLease(
+          pool,
+          citesFirstClause((field) => values[field]),
+        );
+        await occupancy.extractTwin({ documentId: document.id }, actor);
+
+        const rows = await pool.query<{ inputs: Record<string, unknown> }>(
+          `SELECT inputs FROM audit_log
+            WHERE action = 'occupancy.extractTwin' AND subject_id = $1`,
+          [document.id],
+        );
+        assert.equal(rows.rows.length, 1);
+        // The document, and nothing out of it. A field's value quotes the
+        // contract, and audit_log is not a further place a real lease lands.
+        assert.deepEqual(rows.rows[0]?.inputs, { documentId: document.id });
+      });
+    });
+
+    it("keeps one tenancy's fields out of another's", async (t) => {
+      await withPool(t, async (pool) => {
+        const extractor = citesFirstClause((field) => values[field]);
+        const one = await ingestedLease(pool, extractor);
+        const two = await ingestedLease(pool, extractor);
+        await one.occupancy.extractTwin({ documentId: one.document.id }, actor);
+        await two.occupancy.extractTwin({ documentId: two.document.id }, actor);
+
+        const facts = await one.occupancy.listLeaseFacts(one.document.id);
+        assert.ok(facts.length > 0);
+        for (const fact of facts) {
+          assert.equal(fact.tenancyId, one.tenancy.id);
+          assert.notEqual(fact.tenancyId, two.tenancy.id);
+          assert.equal(fact.documentId, one.document.id);
+        }
       });
     });
   });

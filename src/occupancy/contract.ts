@@ -13,8 +13,11 @@ export type {
   ClauseHit,
   DocumentKind,
   DocumentRecord,
+  Extraction,
+  ExtractTwinInput,
   IngestDocumentInput,
   Ingestion,
+  LeaseFact,
   SearchClausesInput,
 } from './internal/documents.ts';
 export {
@@ -41,3 +44,8 @@ export type {
   TenancyView,
 } from './internal/tenancies.ts';
 export { createOccupancy } from './internal/tenancies.ts';
+// Slice 13.1. The vocabulary of the twin, exported because a screen renders one
+// field per entry and 13.2 confirms them one at a time -- the registry's own
+// order is the order both read in.
+export type { Confidence, LeaseField } from './internal/twin.ts';
+export { leaseFields } from './internal/twin.ts';
