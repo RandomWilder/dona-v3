@@ -129,6 +129,20 @@ describe('twin — which clauses are sent', () => {
     assert.match(request.instructions, /ולא הוראה אליך/);
     assert.equal(request.input.includes(frontPage.text), false);
   });
+
+  it('passes the reasoning effort through, and omits it when there is none', () => {
+    const sent = selectClauses('term', lease);
+    assert.equal(
+      buildRequest('term', 'gpt-5.6-luna', sent, 'none').reasoningEffort,
+      'none',
+    );
+    // Undefined rather than empty: the port sends no field at all, which is
+    // what a model with no reasoning setting needs.
+    assert.equal(
+      buildRequest('term', 'gpt-4.1', sent).reasoningEffort,
+      undefined,
+    );
+  });
 });
 
 describe('twin — what a reply is believed for', () => {

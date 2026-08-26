@@ -168,6 +168,30 @@ embedding model is welded to a column width and to every vector already stored, 
 a migration and a re-embed; the extraction model is welded to nothing, and a wrong or unavailable
 id must be correctable with one row rather than a deploy.
 
+### Bounded, because the caller is a browser request
+
+Every call carries `AbortSignal.timeout` (60s) and `max_completion_tokens`. Both are code and not
+config rows, on the argument occupancy's document size cap makes: rule 4 governs tunables, and a
+bound that stops one request consuming a server is a safety limit.
+
+**Measured, not assumed.** Slice 13.1's first press on staging sent five sequential calls with no
+timeout and no reasoning setting; the request died at Cloud Run's 300-second limit, and what
+reached the operator was a blank page with no message in it. A call that has not answered in a
+minute has to become a sentence naming the field it was reading, *before* the platform turns it
+into nothing.
+
+### `reasoning_effort` is a setting, and unset is not the same as none
+
+The GPT-5.6 family reasons by default. Leaving the parameter out therefore does not mean "do not
+reason" -- it means "reason as much as you like", which is what made five calls miss a five-minute
+budget. The effort is `extraction.reasoning_effort`, a config row beside the model, so walking
+`none -> low` when a field comes back wrong costs no deploy.
+
+The row also accepts **`omit`**, which is ours and not the provider's: send no `reasoning_effort`
+field at all. A model with no reasoning setting *refuses* the parameter rather than ignoring it,
+so falling back to one has to be sayable in a row -- otherwise the fallback is a deploy, which is
+the thing these rows exist to avoid.
+
 `createUnconfiguredExtractor()` is the default when no key is configured and it **throws**, on
 the argument `createUnconfiguredEmbedder` and `createUnconfiguredStore` both make. An extractor
 that returned an empty object would write a lease with no fields and look like a lease that says

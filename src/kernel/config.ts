@@ -102,16 +102,66 @@ export async function readEmbeddingSettings(
 
 export const extractionSettingKeys = {
   model: 'extraction.model',
+  reasoningEffort: 'extraction.reasoning_effort',
 } as const;
 
+// What the provider accepts, plus one value of ours. Validated here rather than
+// discovered at the provider: a row nobody checked becomes a 400 on every
+// extraction, and the row that caused it is the last place anyone looks.
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  // Ours, and not the provider's: send no `reasoning_effort` at all. A model
+  // with no reasoning setting refuses the field rather than ignoring it, so
+  // "this model has no such knob" has to be sayable in the row -- otherwise
+  // falling back to such a model means a deploy, which is the thing these rows
+  // exist to avoid.
+  'omit',
+] as const;
+export type ReasoningEffort = (typeof reasoningEfforts)[number];
+
+export interface ExtractionSettings {
+  model: string;
+  // `undefined` when the row says `omit`, so the caller's own "absent means do
+  // not send it" rule is the only place that decision is expressed.
+  reasoningEffort?: ReasoningEffort;
+}
+
 // Read per call rather than at boot, unlike the embedding model. See
-// SPEC-kernel.md, "Two settings, read at two different times": this one is
-// welded to nothing already stored, and a model id the account cannot serve
-// must be correctable with one row rather than with a deploy.
+// SPEC-kernel.md, "Two settings, read at two different times": these are welded
+// to nothing already stored, and a model the account cannot serve -- or one
+// thinking for minutes on a browser request -- must be correctable with a row
+// rather than with a deploy.
 //
-// No fallback constant that differs from the seed: the migration seeds this key
-// and the fallback exists for the same reason `text()` has one at all -- a
-// fresh database mid-migration must not take the process down.
-export async function readExtractionModel(settings: Settings): Promise<string> {
-  return settings.text(extractionSettingKeys.model, 'gpt-5');
+// The defaults here match what the migration seeds, and exist for the reason
+// `text()` has a fallback at all: a fresh database mid-migration must not take
+// the process down.
+export async function readExtractionSettings(
+  settings: Settings,
+): Promise<ExtractionSettings> {
+  const model = await settings.text(
+    extractionSettingKeys.model,
+    'gpt-5.6-luna',
+  );
+  const effort = await settings.text(
+    extractionSettingKeys.reasoningEffort,
+    'none',
+  );
+  if (!(reasoningEfforts as readonly string[]).includes(effort)) {
+    throw new KernelError(
+      'invalid',
+      'extraction.reasoning_effort is not a value the provider accepts',
+      { configured: effort, accepted: reasoningEfforts.join(', ') },
+    );
+  }
+  return {
+    model,
+    reasoningEffort:
+      effort === 'omit' ? undefined : (effort as ReasoningEffort),
+  };
 }
