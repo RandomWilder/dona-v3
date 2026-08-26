@@ -77,17 +77,16 @@ four.
 
 ## 4. Model provider keys (slice 12.2)
 
-- Fired: 2026-08-26 · **staging closed the same day**
-- Status: **staging done, prod owed.** `staging-openai-api-key` exists, version 1, readable by
-  `app-staging@dona-v3.iam.gserviceaccount.com` and by nothing else.
-- **Who owes what: prod has no key.** `prod-openai-api-key` does not exist, so a `v*` tag today
-  deploys a prod revision whose embedder refuses. That is the designed failure -- it says so on
-  the boot line rather than indexing nothing quietly -- but it is a release blocker for week 3's
-  `v0.3.0`, and it is one command:
-
-```
-./infra/set-secret.sh prod openai-api-key
-```
+- Fired: 2026-08-26 · **closed 2026-08-26, both environments**
+- Status: **DONE.** `staging-openai-api-key` and `prod-openai-api-key` both exist at version 1,
+  each readable by its own environment's service account and by nothing else.
+- **Who owes what: nobody.** Prod's key was created the same day, which unblocks week 3's
+  `v0.3.0`: `release.yml` already maps `OPENAI_API_KEY=prod-openai-api-key:latest`, so before
+  it existed a tag would have deployed a revision that could not embed or extract. Nothing has
+  to be rolled now -- the tag itself creates the revision that resolves it.
+- **The same key serves both model calls.** Embeddings (12.2) and extraction (13.1) are one
+  credential and one processor; `SPEC.md`'s "Third parties" note carries the line about the
+  second kind of call.
 
 - **The mechanism, so the next key is not a decision.** `infra/set-secret.sh <env> <name>` is the
   only way a credential enters this system. Secret Manager is the single source of truth for
