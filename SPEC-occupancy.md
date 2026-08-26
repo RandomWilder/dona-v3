@@ -486,6 +486,75 @@ extraction inside the upload request makes a browser wait on it for no gain. Aut
 attach is deferred, not forgotten; it wants the kernel's durable work (`work.ts`), which is
 its own slice.
 
+## Retrieval (slice 12.2)
+
+12.1 cut the lease into clauses. This slice makes them findable, and it is where SPEC.md's
+**"absolute tenant isolation enforced at the query layer"** stops being a sentence about
+`resolveByPhone` and becomes a `WHERE` clause on a vector search.
+
+| Table | Holds |
+|---|---|
+| `occupancy_chunk_embeddings` | `chunk_id`, `tenancy_id`, `model`, `embedding vector(1536)`, `created_at` |
+
+Migration `0012_embeddings.sql`.
+
+### The filter is a column, which is the whole point
+
+`tenancy_id` was put on the chunk row in 12.1 *for this slice*, and it is carried onto the
+embedding row for the same reason: **every retrieval query filters by occupancy, and a filter on a
+column of the table being searched is one a query cannot be written without noticing.** A filter
+that needs a join back to `occupancy_documents` is a join a later query can omit, and the query
+that omits it answers one tenant with another's lease.
+
+`searchClauses` takes `tenancyId` as a **required argument**. There is no default, no optional
+parameter and no code path that searches every lease — an "all tenancies" search is not a feature
+this module declines to expose, it is a shape that does not exist here.
+
+### Keyed by model, so a model change is not a rewrite
+
+The primary key is `(chunk_id, model)`. Re-embedding under a new model id must not touch the
+clause rows, and during a change both sets have to exist at once — the old one still answering
+questions while the new one is built. `ON DELETE CASCADE` to the chunk is the only cascade in this
+module and it is deliberate: an embedding is derived from a clause and is meaningless without it,
+which is the opposite of the dangling-reference argument that makes everything else `RESTRICT`.
+
+### Embedding is part of ingesting, not a second button
+
+`ingestDocument` embeds the chunks it just cut and writes both together. Reading a document and
+indexing it are one operation from the operator's side, and splitting them would create a state —
+chunks with no vectors — that looks identical to "indexed" on every screen that counts clauses.
+
+**The embedding happens before the transaction opens, not inside it.** It is a network call to a
+third party, and holding a Postgres transaction open across one is how a slow provider becomes a
+lock nobody can explain. The guarantee survives the ordering: a failed embedding throws before a
+single row is deleted, so the previous pass is still intact and a document is never half-indexed.
+The transaction then writes clauses and vectors together, which is what stops a crash between them
+leaving clauses nothing can find.
+
+It also means ingestion now takes as long as the embedding calls, which is the cost of the
+guarantee and is stated rather than hidden.
+
+### `searchClauses({ tenancyId, query, limit }) → ClauseHit[]`
+
+The query text is embedded through the same `Embedder` the chunks were, then ranked by cosine
+distance within the tenancy. A hit carries what a citation needs — `clauseRef`, `pageFrom`,
+`pageTo`, the text, and the distance — so the caller can cite rather than paraphrase.
+
+An unknown or wrong `tenancyId` returns **an empty list, not `not_found`**. A tenancy that has no
+indexed lease and a tenancy that is not yours must look identical from the outside: a distinct
+error would confirm the tenancy exists, which is an isolation leak wearing an error code.
+
+Unaudited here, as this module's other reads are. Its callers audit their own use.
+
+### What is deliberately not here
+
+- **Ranking across lease → policy → refuse.** Slice 14.1. This searches one tenancy's documents
+  and stops.
+- **An answer.** `searchClauses` returns clauses, not prose. The agent that turns them into a
+  Hebrew sentence with a citation is week 4, and SPEC.md rule 2 keeps it a client of this command.
+- **Re-embedding on a model change.** The table can hold two models at once; nothing orchestrates
+  moving between them.
+
 ## Audited
 
 `openTenancy`, `addParty` and `endTenancy` are wrapped in the kernel's `audit.around`, so a

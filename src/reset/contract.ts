@@ -49,6 +49,11 @@ export const truncatedTables = [
   // Both are in one TRUNCATE statement, which is what lets the chunk table's
   // ON DELETE RESTRICT stand without making a reset impossible.
   'occupancy_document_chunks',
+  // Slice 12.2. In the same TRUNCATE as the chunks rather than left to the
+  // ON DELETE CASCADE, because TRUNCATE does not cascade without being told to
+  // -- and being told to would reach past this list into tables we promised not
+  // to touch. Listing it here keeps the no-CASCADE rule and empties it anyway.
+  'occupancy_chunk_embeddings',
   'idempotency_keys',
 ] as const;
 
@@ -64,6 +69,11 @@ export const truncatedTables = [
 // that was run. `schema_migrations` would make the next boot re-run every
 // migration.
 export const preservedTables = [
+  // Slice 12.2. Configuration, not domain data: the embedding model id and its
+  // width are settings an environment was deliberately given, in the same class
+  // as the staff logins and schema_migrations. A reset that wiped them would
+  // re-seed a building and quietly change how the next lease is indexed.
+  'config_settings',
   'staff_operators',
   'staff_sessions',
   'staff_login_attempts',

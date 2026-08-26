@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { registerChannelUi } from './channel/contract.ts';
 import type { Clock } from './kernel/clock.ts';
+import type { Embedder } from './kernel/embeddings.ts';
 import { httpStatus, KernelError, toErrorBody } from './kernel/errors.ts';
 import type { ObjectStore } from './kernel/objects.ts';
 import { registerUiAssets } from './kernel/ui/assets.ts';
@@ -14,6 +15,9 @@ export interface AppDeps {
   // Where lease documents live. Wired at boot; absent in tests that never touch
   // one, where occupancy falls back to a store that throws rather than forgets.
   store?: ObjectStore;
+  // Same shape: absent, occupancy falls back to an embedder that refuses rather
+  // than one that returns zeros.
+  embedder?: Embedder;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -67,6 +71,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     pool: deps.pool,
     clock: deps.clock,
     store: deps.store,
+    embedder: deps.embedder,
   });
   registerChannelUi(app);
 

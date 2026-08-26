@@ -10,6 +10,11 @@ import {
   createAuditLog,
 } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
+import { createSettings, type Settings } from '../../kernel/config.ts';
+import {
+  createUnconfiguredEmbedder,
+  type Embedder,
+} from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
@@ -24,12 +29,14 @@ import { optionalDate, validDate } from './dates.ts';
 import {
   type AttachDocumentInput,
   type ChunkRecord,
+  type ClauseHit,
   createDocuments,
   createUnconfiguredStore,
   type DocumentRecord,
   type Documents,
   type IngestDocumentInput,
   type Ingestion,
+  type SearchClausesInput,
 } from './documents.ts';
 import {
   type OccupancyRole,
@@ -140,6 +147,9 @@ export interface Occupancy {
   // upload request would hold a browser open for no gain.
   ingestDocument(input: IngestDocumentInput, actor: Actor): Promise<Ingestion>;
   listChunks(documentId: string): Promise<ChunkRecord[]>;
+  // Slice 12.2: the clauses of ONE tenancy, ranked. `tenancyId` is required and
+  // has no default — SPEC.md's isolation rule as a WHERE on the searched table.
+  searchClauses(input: SearchClausesInput): Promise<ClauseHit[]>;
   countChunks(tenancyId: string): Promise<Record<string, number>>;
 }
 
@@ -158,6 +168,12 @@ export interface OccupancyDeps {
   // How a PDF becomes positioned text. Injected like the store, so a test can
   // hand over pages it wrote itself and never open a real file.
   pdf?: PdfText;
+  // How text becomes vectors. Absent, it is an embedder that throws rather than
+  // one that returns zeros: a process that lost its key must not index a lease
+  // into vectors that match nothing, a failure invisible until a tenant asks a
+  // question and gets silence.
+  embedder?: Embedder;
+  settings?: Settings;
 }
 
 interface TenancyRow {
@@ -190,6 +206,8 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     // that refuses: pdfjs needs no bucket, no credential and no configuration,
     // so there is no such thing as a process that forgot to set it up.
     pdf: deps.pdf ?? createPdfjsText(),
+    embedder: deps.embedder ?? createUnconfiguredEmbedder(),
+    settings: deps.settings ?? createSettings(pool),
   });
 
   // The whole view for one tenancy. Both entry points into it — by tenancy id
@@ -468,6 +486,7 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     readDocument: (documentId) => documents.readDocument(documentId),
     ingestDocument: (input, actor) => documents.ingestDocument(input, actor),
     listChunks: (documentId) => documents.listChunks(documentId),
+    searchClauses: (input) => documents.searchClauses(input),
     countChunks: (tenancyId) => documents.countChunks(tenancyId),
   };
 }

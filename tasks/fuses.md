@@ -68,6 +68,30 @@ gs://dona-v3-prod-docs      the object
 occupancy_documents         + occupancy_document_chunks   the row and the clause text
 ```
 
+## 4. Model provider keys (slice 12.2)
+
+- Fired: 2026-08-26 · **staging closed the same day**
+- Status: **staging done, prod owed.** `staging-openai-api-key` exists, version 1, readable by
+  `app-staging@dona-v3.iam.gserviceaccount.com` and by nothing else.
+- **Who owes what: prod has no key.** `prod-openai-api-key` does not exist, so a `v*` tag today
+  deploys a prod revision whose embedder refuses. That is the designed failure -- it says so on
+  the boot line rather than indexing nothing quietly -- but it is a release blocker for week 3's
+  `v0.3.0`, and it is one command:
+
+```
+./infra/set-secret.sh prod openai-api-key
+```
+
+- **The mechanism, so the next key is not a decision.** `infra/set-secret.sh <env> <name>` is the
+  only way a credential enters this system. Secret Manager is the single source of truth for
+  staging and prod; `.env` is local values only and is gitignored; the repo has never held a
+  credential. The value is never a command-line argument -- arguments reach shell history and
+  `ps` -- and the grant is per secret, so staging cannot read prod's keys. Rotation is the same
+  command: versions supersede rather than overwrite, and rolling back is adding the old value
+  again.
+- **The gotcha, written down once:** Cloud Run resolves `:latest` when an instance starts, not
+  when a version is added. A rotated key reaches the service only when a new revision rolls.
+
 ### Original request (history)
 - Fired: 2026-08-22 ✅
 - Status: **sent and acknowledged** — Dona Dom confirmed a set of all relevant documents will be sent, organized **by apartment**, phone numbers included.

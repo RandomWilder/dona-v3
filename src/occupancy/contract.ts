@@ -10,15 +10,19 @@ export { optionalDate, validDate } from './internal/dates.ts';
 export type {
   AttachDocumentInput,
   ChunkRecord,
+  ClauseHit,
   DocumentKind,
   DocumentRecord,
   IngestDocumentInput,
   Ingestion,
+  SearchClausesInput,
 } from './internal/documents.ts';
 export {
+  defaultSearchLimit,
   documentContentType,
   documentKinds,
   maxDocumentBytes,
+  maxSearchLimit,
 } from './internal/documents.ts';
 export type { OccupancyRole, TenancyAccess } from './internal/roles.ts';
 export { occupancyRoles, tenancyAccess } from './internal/roles.ts';

@@ -261,5 +261,6 @@ function chunkDetail(clauseRef: string): DocumentChunks {
         createdAt: '2026-08-25T09:00:00.000Z',
       },
     ],
+    search: null,
   };
 }

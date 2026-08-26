@@ -85,6 +85,57 @@ A file that is not a PDF, or is one the parser cannot open, is `invalid` — nev
 stack. A page with no text layer is **not** an error: it comes back with zero items, and
 saying which pages those were is the caller's job (week 3's OCR cut line).
 
+## Settings (`config.ts`, slice 12.2)
+
+SPEC.md rule 4 says policies are data — "config rows editable in admin, never constants". Until
+12.2 nothing in this system had a tunable, so nothing config-shaped existed. The embedding model
+id and its dimension count are the first, and this is the smallest thing that honours the rule.
+
+One table, `config_settings`: `key` text primary key, `value` jsonb, `updated_at`. A typed reader
+(`getSetting(key, fallback)`) and nothing else — **no admin screen**, which is week 5's `catalog`
+and is where the "editable in admin" half of rule 4 gets built. Until then a row is changed by
+hand, and that is the honest state.
+
+### The dimension is config *and* schema, and the reader says so
+
+A `vector(n)` column has its dimension compiled into the column type. So `embedding.dimensions`
+cannot be freely edited the way a deductible can: changing it without a migration produces
+vectors the column rejects, or — worse, if the column were untyped — vectors nothing can compare.
+
+The reader therefore **asserts the row agrees with the schema's width** and refuses to embed when
+it does not. A setting that can be set to a value the system cannot honour is a trap; one that
+refuses loudly is a config row with a constraint, which is what this one is. Changing the
+dimension is a migration plus a re-embed, and the spec says so rather than letting someone
+discover it.
+
+## Embeddings (`embeddings.ts`, slice 12.2)
+
+`embed(texts)` → one vector per text, order preserved. Infrastructure on the footing `objects.ts`
+and `pdf.ts` stand on: it holds the shape of a call and no business logic — it does not know what
+a lease or a clause is.
+
+**The first model call this project makes.** Weeks 1–2 built an operations system of record with
+no AI in it at all; SPEC.md rule 2 governs what happens from here — the agent is a client, never
+a brain, and this is a client of the narrowest kind: text in, numbers out, no prompt.
+
+`createOpenAiEmbedder({ apiKey, model, dimensions })` talks to the embeddings endpoint over
+`fetch` with no SDK, the same economy `objects.ts` argued for GCS: one HTTP call, a bearer token,
+and a JSON body. `text-embedding-3-large` requested at 1536 dimensions — the model ROADMAP.md
+names, at a width pgvector can index, since hnsw caps at 2000 and the model's native 3072 would
+force `halfvec`.
+
+Texts are sent in batches, and a batch that fails is not silently partial: the call throws and
+the caller's transaction rolls back, so a document is never half-indexed.
+
+`createUnconfiguredEmbedder()` is the default when no key is configured, and it **throws** rather
+than returning zeros — the same argument `createUnconfiguredStore` makes. A process that lost its
+key must not index a lease into vectors that match nothing, because that failure is invisible
+until someone asks a question and gets silence.
+
+**Which one is running is reported at boot**, beside the document store. A deployed revision
+running on a refusing embedder is wrong in exactly the way `docs: memory` is wrong, and it has to
+be sayable.
+
 ## Idempotency (`idempotency.ts`)
 
 `once<T>(key, work)` — the key is the caller's business intent (job id, offer id), never a random value.
