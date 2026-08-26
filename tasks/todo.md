@@ -179,13 +179,42 @@ the *order* they come back in — carried to 14.1 with a diagnosis rather than a
 
 ## Day 13 (Wed) — The digital twin
 
-### Slice 13.1 — Extraction to structured fields ☐
-- [ ] End date, rent, deposit/guarantees, notice periods, deductible clauses → structured, **each traceable to its source clause**
-- [ ] **The lease's own shape, not a simplification** (`SPEC-occupancy.md`, 7.1's note): the term is an initial period plus two options capped at ten years, and rent is an **index-linked formula against a base month**, not a number. The twin must not store a single end date or a single rent figure
-- [ ] SPEC.md rule 7 holds absolutely: read financial context, never compute a charge
+### Slice 13.1 — Extraction to structured fields ☑
+- [x] End date, rent, deposit/guarantees, notice periods, deductible clauses → structured, **each traceable to its source clause** — and a list's rows cite **their own** clause, since a notice window and a who-pays rule come from different ones
+- [x] **The lease's own shape, not a simplification** (`SPEC-occupancy.md`, 7.1's note): the term is an initial period plus two options capped at ten years, and rent is an **index-linked formula against a base month**, not a number. The twin must not store a single end date or a single rent figure
+- [x] SPEC.md rule 7 holds absolutely: read financial context, never compute a charge
+- [x] **The repo's first generative model call**, as a kernel port beside `embeddings.ts`:
+      instructions, text and a strict JSON schema in, parsed JSON out. What a lease field is
+      lives in `occupancy/internal/twin.ts`, pure, where the tests are
+- [x] **A citation naming a clause that was not sent is rejected**, and the field is not
+      stored. A wrong value with an honest citation is a correction 13.2 can make; a value
+      with an invented citation is rendered as grounded by every screen after it
+- [x] **Which clauses are sent is deterministic** — by clause reference and keyword, never by
+      similarity, because ranking is measured-bad and carried to 14.1. It is also a privacy
+      decision: selection requires a clause number, the front page has none, so the parties'
+      names, ID numbers, phones and email are never sent to the provider at all
+- [x] **The vocabulary is code and not a `CHECK`**, alone among this schema's closed lists:
+      more fields will be defined, and a constraint would make each one a migration whose
+      content is a copy of a list `twin.ts` already enforces
+- [x] **The first press failed, and the fix is the more useful half.** Five sequential calls at
+      the provider's default reasoning effort died at Cloud Run's 300s timeout — a blank page,
+      nothing written. `reasoning_effort` was never being sent, which is not the same as
+      sending `none`. Now: a per-call timeout, concurrent calls, effort as a config row, and a
+      model chosen from the measurement rather than from an argument
+      ([#28](https://github.com/RandomWilder/dona-v3/pull/28))
 
 **Done when:** one real lease's fields are extracted with a clause reference on each.
 **Verify:** read the extracted fields against the document. · Size: L
+**Closed 2026-08-26 — the bar, met and evidenced.** Five fields, five citations, read on
+staging by the owner against the PDF. The two that carry the argument: the **term** came out
+as an initial period plus two options and a ten-year cap — the shape a single end date would
+falsify — and the **rent** is the rent and not the maintenance fee, which is the failure
+`docs/reference/lease-template-donadom.md` names for `נספח א׳ §10`, checked against page 14.
+Notice windows and who-pays rules came back as lists whose rows cite four different `נספח י״א`
+clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
+[#27](https://github.com/RandomWilder/dona-v3/pull/27) and
+[#28](https://github.com/RandomWilder/dona-v3/pull/28); staging serves `1370e89`. Evidence:
+`tasks/evidence/day-13-twin.md`.
 
 ### Slice 13.2 — Admin review screen ☐
 - [ ] Confirm/correct each extracted field, on top of 10.1's views and through the guarded surface
@@ -251,6 +280,25 @@ the *order* they come back in — carried to 14.1 with a diagnosis rather than a
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 13
+
+- **The securities read one obligation as two.** The annex offers a cash deposit *or* a bank
+  guarantee, and the twin lists both with the same stated amount — a reader adding them sees
+  twice the security the lease requires. 13.2's review screen is exactly the place a human
+  fixes it, and it is a golden case for 14.2. Deliberately **not** patched into the prompt:
+  changing a prompt on one bad output with no eval run is PIPELINE.md §9's named anti-pattern.
+- **`חיובים והשתתפות` names the payer, not the subject.** The registry asks what the charge is
+  about; the model returned who bears it. Vocabulary week 5's `catalog` has to settle rather
+  than inherit.
+- **189s then 8.3s is unexplained.** No single call exceeded the 60s bound, so five concurrent
+  calls summing to ~190s were serialized outside this system — provider-side queueing is the
+  likely reading, and prompt caching the likely reason the repeat was fast. Week 4 puts a
+  tenant on the other end of a model call, so it is worth settling before then: press once
+  after the cache window and compare.
+- **A chain of model calls sits on a browser request.** Bounded and concurrent is not the same
+  as belonging there. Together with synchronous ingest, this is now two commands waiting on
+  `kernel/work.ts` — which has become the most-deferred slice in the week.
 
 ## Carried in from day 12 (second pass)
 
