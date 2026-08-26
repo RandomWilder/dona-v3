@@ -99,15 +99,50 @@ real lease is in it, attached to its own tenancy and to nobody.
 
 ## Day 12 (Tue) — Ingestion
 
-### Slice 12.1 — Text extraction + clause-aware chunking ☐
-- [ ] PDF → text; chunk on clause boundaries rather than a fixed window, so a citation can name a clause
-- [ ] Each chunk keeps its source location, because "cited" means traceable to a place in the document
-- [ ] **Cut line (ROADMAP):** OCR for scanned PDFs — log as a manual-entry fallback rather than build it
+### Slice 12.1 — Text extraction + clause-aware chunking ☑
+- [x] PDF → text; chunk on clause boundaries rather than a fixed window, so a citation can name a clause
+- [x] Each chunk keeps its source location, because "cited" means traceable to a place in the document
+- [x] **Two seams, in the places the architecture already had.** `kernel/pdf.ts` beside
+      `objects.ts` — positioned text items, no business logic, it does not know what a lease is;
+      `occupancy/internal/clauses.ts` pure like `roles.ts` and `paths.ts`, where the Hebrew that
+      identifies a clause lives. One new runtime dependency, `pdfjs-dist`: positions are what
+      make the two-column annex survivable and a citation traceable to a place
+- [x] **`tenancy_id` is duplicated onto the chunk row** — 12.2 filters every retrieval query by
+      occupancy, and a filter on a column of the table being searched is one a vector query
+      cannot be written without noticing. A join back to `occupancy_documents` is a join a later
+      query can be written without, and the query that forgets it returns another tenant's lease
+- [x] **The annexes name their clauses in words** — and finding that out cost two of the day's
+      three commits. The body writes `1.`, `3.2`; נספח א׳ writes `סעיף 5 – …`, naming the body
+      clause each row qualifies. Reading only the first form left the annex the digital twin
+      reads as **one chunk split by length**, cited `נספח א׳ (1/2)` — a reference naming two
+      pages rather than a clause, and the foundation 13.1 would have been built on
+- [x] **A property that lived for one HTTP response.** `ingestDocument` computed the pages with
+      no text layer, returned them, and the redirect dropped them — while `SPEC-staff.md` claimed
+      the screen showed them. `ingested_at` / `page_count` / `image_only_pages` on
+      `occupancy_documents` now, written in the transaction that replaces the chunks
+- [ ] ~~**Cut line (ROADMAP):** OCR for scanned PDFs~~ — **and the cut is deeper than logged.**
+      Not only is OCR not built: the four image-only pages are **not detected at all**. See the
+      carry list
 
 **Done when:** the real pilot lease is chunked and every chunk points back at its clause.
 **Verify:** spot-read 5 chunks against the PDF. · Size: M
+**Closed 2026-08-25 — the bar, met and evidenced.** 273 chunks, read on staging by the owner in
+a browser three times, once per commit (266 → 273 → 273). More than five spot-read against the
+PDF; the two that carry the argument are **`נספח א׳ §5`**, holding the initial period, both
+options and the ten-year cap as one citable clause, and **`נספח א׳ §10`**, holding the rent and
+the maintenance fee in the clause that states them. A preamble keeps a null reference rather
+than an invented one, `§20` spans a page break, and `נספח ז׳ §3.1–3.2` shows a second annex
+chunking by its own numbering. Merged as [#20](https://github.com/RandomWilder/dona-v3/pull/20),
+[#21](https://github.com/RandomWilder/dona-v3/pull/21) and
+[#22](https://github.com/RandomWilder/dona-v3/pull/22); staging serves `99aac93`. Evidence:
+`tasks/evidence/day-12-chunking.md`.
 
 ### Slice 12.2 — Embeddings → pgvector, scoped by occupancy ☐
+> **Started after 12.1 closed.** 12.1 took three commits rather than one, because the real lease
+> disagreed with the first cut twice and both disagreements were worth fixing before retrieval
+> sat on top of them. The chunk rows it leaves behind already carry `tenancy_id` for exactly this
+> slice's isolation filter.
+
 - [ ] pgvector index; **every retrieval query filtered by occupancy** — SPEC.md's isolation rule at the query layer, the same seam 7.1 built
 - [ ] An isolation test that *attempts the crossing*: tenant A's question must not reach tenant B's lease, asserted in both directions
 - [ ] Model id and dimensions are config rows, not constants (SPEC.md rule 4)
@@ -166,6 +201,32 @@ real lease is in it, attached to its own tenancy and to nobody.
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 12
+
+- **The four image-only pages are not detected, and the screen says otherwise** (12.1). The
+  chunks page reads *"בכל העמודים נמצא טקסט"* for a document
+  `docs/reference/lease-template-donadom.md` measured as having four image-only pages. Two
+  passes at the bar — "yields zero text items", then "yields under `minPageChars`" — flagged
+  none, and the logs prove the second one ran (`302`, 2.9s, revision `dona-staging-00033-nls`,
+  boot line `99aac93`). So **every page of the lease carries at least 40 characters**: those four
+  carry a title block, a caption, a header. The note's *image-only* means the page's content is a
+  picture; the code measures how much text a page yields. Different properties, and no third
+  threshold bridges them, which is why a third was not chosen. Real detection asks whether a
+  page's drawing operators are dominated by a full-page image — a pdfjs operator-list question
+  and its own slice. **Until then the screen asserts an all-clear it cannot support**, and that
+  wording is the cheaper half of the fix.
+- **A running footer is swallowed into the clause that spans it** (12.1). `§20` ends with
+  `- 14 -` and `נספח א׳ §10` carries `- 15 -` between the rent and the maintenance figure.
+  Detecting a repeated footer needs the whole document rather than one page. Noise inside a
+  chunk rather than a wrong citation, so it waits.
+- **A same-day re-read is invisible.** The chunks page shows the read *date* and not the time, so
+  re-reading a document changes nothing on screen — which cost a full round of "did it even run"
+  that only the Cloud Run logs could answer. The screen should carry the evidence of its own last
+  action.
+- **A chunk's boundaries are a heuristic, not a parse** (12.1). Two clause forms are read;
+  a lease laid out unlike the tender's scheme will chunk worse, and the honest place to find that
+  out is a second real lease.
 
 ## Carried in from weeks 1–2
 - ~~**The real tenant table**~~ — no longer carried. Fuse 3 was reframed 2026-08-25: dev runs on data we define, the request is derived from our templates at sign-off, and 8.1 closed under the corrected bar.
