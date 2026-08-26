@@ -8,6 +8,7 @@ import type { Pool } from 'pg';
 import { createIdentity } from '../../identity/contract.ts';
 import { createAuditLog } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
+import type { Embedder } from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
 import type { Html } from '../../kernel/ui/html.ts';
@@ -45,6 +46,9 @@ export interface StaffDeps {
   // Where lease documents live. Absent, occupancy falls back to a store that
   // throws rather than one that forgets (SPEC-occupancy.md).
   store?: ObjectStore;
+  // How clause text becomes vectors. Absent, occupancy falls back to an embedder
+  // that refuses rather than one that returns zeros.
+  embedder?: Embedder;
 }
 
 interface Credentials {
@@ -156,6 +160,7 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     identity,
     portfolio,
     store: deps.store,
+    embedder: deps.embedder,
   });
   const guarded = { identity, portfolio, occupancy, pool: deps.pool, clock };
   const commands = createStaffCommands(guarded);
@@ -337,6 +342,11 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
           param(request, 'unitId'),
           param(request, 'documentId'),
           session,
+          // A GET with the question in the query string, so a search is a link
+          // an operator can share and reload — and so nothing on this page
+          // needs JavaScript, which is the rule the admin shell states about
+          // itself (SPEC-staff.md).
+          asString((request.query as Record<string, unknown>)?.q),
         ),
         context,
       ),

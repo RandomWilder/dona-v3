@@ -36,6 +36,13 @@ SEED_EMAIL_SECRET="$ENV-staff-seed-email"
 SEED_PASSWORD_SECRET="$ENV-staff-seed-password"
 VIEWER_EMAIL_SECRET="$ENV-staff-viewer-email"
 VIEWER_PASSWORD_SECRET="$ENV-staff-viewer-password"
+# Slice 12.2. Not created here and deliberately: bootstrap generates the
+# passwords it owns, and this one is a third party's -- it arrives through
+# infra/set-secret.sh, which is the single way a credential enters this system.
+# What bootstrap owns is the *grant*, so a re-run cannot leave the runtime
+# account able to reach a key it is supposed to read, or able to reach one it
+# is not.
+OPENAI_SECRET="$ENV-openai-api-key"
 DOCS_BUCKET="$PROJECT-$ENV-docs"
 RUNTIME_SA="app-$ENV"
 DEPLOY_SA="deploy-$ENV"
@@ -187,7 +194,16 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:$RUNTIME_EMAIL" \
   --role roles/cloudsql.client --condition=None >/dev/null
 for secret in "$SECRET" "$SEED_EMAIL_SECRET" "$SEED_PASSWORD_SECRET" \
-  "$VIEWER_EMAIL_SECRET" "$VIEWER_PASSWORD_SECRET"; do
+  "$VIEWER_EMAIL_SECRET" "$VIEWER_PASSWORD_SECRET" "$OPENAI_SECRET"; do
+  # The model key may not exist yet -- a fresh environment has no OpenAI key
+  # until someone runs set-secret.sh, and that is not an error worth failing a
+  # bootstrap over. The deploy will mount it when it is there; until then the
+  # boot line reads `embeddings: unconfigured`, which is the loud version of
+  # missing.
+  gcloud secrets describe "$secret" --project "$PROJECT" >/dev/null 2>&1 || {
+    echo "  $secret does not exist yet — ./infra/set-secret.sh $ENV ${secret#"$ENV-"}"
+    continue
+  }
   gcloud secrets add-iam-policy-binding "$secret" \
     --member "serviceAccount:$RUNTIME_EMAIL" \
     --role roles/secretmanager.secretAccessor --project "$PROJECT" >/dev/null

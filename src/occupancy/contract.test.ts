@@ -3,13 +3,19 @@ import { describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { createIdentity } from '../identity/contract.ts';
 import { type Clock, fixedClock } from '../kernel/clock.ts';
+import { embeddingColumnDimensions } from '../kernel/config.ts';
+import {
+  createFakeEmbedder,
+  createUnconfiguredEmbedder,
+  type Embedder,
+} from '../kernel/embeddings.ts';
 import type { KernelError } from '../kernel/errors.ts';
 import { newId } from '../kernel/ids.ts';
 import { createMemoryStore, type ObjectStore } from '../kernel/objects.ts';
 import type { PdfPage, PdfText } from '../kernel/pdf.ts';
 import { migratedPoolOrNull, skipReason } from '../kernel/pg-support.ts';
 import { createPortfolio } from '../portfolio/contract.ts';
-import { type Actor, createOccupancy } from './contract.ts';
+import { type Actor, createOccupancy, maxSearchLimit } from './contract.ts';
 
 // Contract tests: every command goes through contract.ts — occupancy's, and
 // identity's and portfolio's too, since this module composes them. The pool is
@@ -52,7 +58,13 @@ async function withPool(
 
 // The three modules as one caller sees them, on one clock. The document store
 // is in memory: no test reaches the network, and none needs a bucket.
-function world(pool: Pool, clock?: Clock, store?: ObjectStore, pdf?: PdfText) {
+function world(
+  pool: Pool,
+  clock?: Clock,
+  store?: ObjectStore,
+  pdf?: PdfText,
+  embedder?: Embedder,
+) {
   const identity = createIdentity({ pool, clock });
   const portfolio = createPortfolio({ pool, clock });
   const occupancy = createOccupancy({
@@ -62,6 +74,7 @@ function world(pool: Pool, clock?: Clock, store?: ObjectStore, pdf?: PdfText) {
     portfolio,
     store: store ?? createMemoryStore(),
     pdf: pdf ?? emptyPdf,
+    embedder,
   });
   return { identity, portfolio, occupancy };
 }
@@ -1016,7 +1029,16 @@ describe('occupancy contract', () => {
     async function tenancyFor(pool: Pool, pdf: PdfText, store?: ObjectStore) {
       const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
       const shared = store ?? createMemoryStore();
-      const world_ = world(pool, clock, shared, pdf);
+      // Ingesting embeds as of 12.2, so these need a working embedder even
+      // though what they assert is the chunking. The fake one reaches no
+      // network and needs no key.
+      const world_ = world(
+        pool,
+        clock,
+        shared,
+        pdf,
+        createFakeEmbedder(embeddingColumnDimensions),
+      );
       const building = await world_.portfolio.addBuilding(
         uniqueAddress(),
         actor,
@@ -1112,6 +1134,7 @@ describe('occupancy contract', () => {
           fixedClock(new Date('2026-09-16T09:00:00Z')),
           store,
           pdfOf([...lease, pdfPage(3, ['5. הודעה מוקדמת של 60 יום.'])]),
+          createFakeEmbedder(embeddingColumnDimensions),
         );
         const again = await reread.ingestDocument(
           { documentId: document.id },
@@ -1199,6 +1222,7 @@ describe('occupancy contract', () => {
           undefined,
           createMemoryStore(),
           pdfOf(lease),
+          createFakeEmbedder(embeddingColumnDimensions),
         );
         await assert.rejects(
           withEmptyStore.ingestDocument({ documentId: document.id }, actor),
@@ -1239,6 +1263,256 @@ describe('occupancy contract', () => {
             WHERE action = 'occupancy.ingestDocument' AND outcome = 'error'`,
         );
         assert.ok(failed.rows.some((row) => row.error_code === 'not_found'));
+      });
+    });
+  });
+  describe('clause search', () => {
+    // The fake embedder is deterministic on the text: the same string always
+    // gives the same vector, and different strings give different ones. That is
+    // exactly enough to prove *which rows a query reached*, which is what this
+    // slice is about. It is not a semantic model, so these tests ask for text
+    // they know is in the document rather than pretending to test relevance.
+    const embedder = createFakeEmbedder(embeddingColumnDimensions);
+
+    async function indexedTenancy(pool: Pool, clauses: string[]) {
+      const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+      const store = createMemoryStore();
+      const world_ = world(
+        pool,
+        clock,
+        store,
+        pdfOf([pdfPage(1, clauses)]),
+        embedder,
+      );
+      const building = await world_.portfolio.addBuilding(
+        uniqueAddress(),
+        actor,
+      );
+      const unit = await world_.portfolio.addUnit(
+        { buildingId: building.id, label: '24', floor: 2 },
+        actor,
+      );
+      const tenancy = await world_.occupancy.openTenancy(
+        { unitId: unit.id, startsOn: '2026-01-01' },
+        actor,
+      );
+      const document = await world_.occupancy.attachDocument(
+        {
+          tenancyId: tenancy.id,
+          kind: 'lease',
+          contentType: 'application/pdf',
+          bytes: Buffer.from('%PDF-1.7\nthe signed lease\n%%EOF'),
+        },
+        actor,
+      );
+      await world_.occupancy.ingestDocument({ documentId: document.id }, actor);
+      return { ...world_, tenancy, document };
+    }
+
+    it('finds a clause in the tenancy that holds it', async (t) => {
+      await withPool(t, async (pool) => {
+        const rent = '10. דמי השכירות החודשיים יעמדו על סך של 5,840 ש"ח.';
+        const { occupancy, tenancy, document } = await indexedTenancy(pool, [
+          '5. תקופת השכירות מתחילה ביום 15/08/2025.',
+          rent,
+        ]);
+
+        const hits = await occupancy.searchClauses({
+          tenancyId: tenancy.id,
+          query: rent,
+        });
+
+        assert.ok(hits.length > 0);
+        const best = hits[0];
+        assert.equal(best?.clauseRef, '§10');
+        assert.equal(best?.documentId, document.id);
+        // What a citation needs, and the reason the hit carries it: a caller
+        // can point a human at the page rather than paraphrasing.
+        assert.equal(best?.pageFrom, 1);
+        assert.match(best?.text ?? '', /5,840/);
+        // Ranked, not merely filtered: the caller takes the top hit, so the
+        // order is part of what this command promises.
+        const distances = hits.map((hit) => hit.distance);
+        assert.deepEqual(
+          distances,
+          [...distances].sort((a, b) => a - b),
+        );
+      });
+    });
+
+    // The point of the slice. SPEC.md: "absolute tenant isolation enforced at
+    // the query layer — proven by tests that attempt to cross it."
+    it('cannot reach another tenancy, in either direction', async (t) => {
+      await withPool(t, async (pool) => {
+        // Deliberately near-identical leases. If the filter were missing,
+        // similarity alone would carry each query straight into the other
+        // tenancy's rows — which is the failure being excluded, and it would
+        // not be excluded by two documents that look nothing alike.
+        const shared = '5. תקופת השכירות מתחילה ביום 15/08/2025.';
+        const mine = '10. דמי השכירות יעמדו על סך של 5,840 ש"ח.';
+        const theirs = '10. דמי השכירות יעמדו על סך של 7,200 ש"ח.';
+
+        const a = await indexedTenancy(pool, [shared, mine]);
+        const b = await indexedTenancy(pool, [shared, theirs]);
+
+        // A asks for B's exact text — the strongest possible pull across the
+        // line, since the fake embedder scores an exact string at distance 0.
+        const intoB = await a.occupancy.searchClauses({
+          tenancyId: a.tenancy.id,
+          query: theirs,
+        });
+        for (const hit of intoB) {
+          assert.equal(hit.documentId, a.document.id);
+          assert.doesNotMatch(hit.text, /7,200/);
+        }
+
+        // And the same crossing attempted from the other side, because a filter
+        // can be right in one direction and absent in the other.
+        const intoA = await b.occupancy.searchClauses({
+          tenancyId: b.tenancy.id,
+          query: mine,
+        });
+        for (const hit of intoA) {
+          assert.equal(hit.documentId, b.document.id);
+          assert.doesNotMatch(hit.text, /5,840/);
+        }
+
+        // The shared clause exists in both, and each side sees only its own row
+        // of it — the check that the two leases really were indexed alike.
+        const sharedFromA = await a.occupancy.searchClauses({
+          tenancyId: a.tenancy.id,
+          query: shared,
+        });
+        assert.ok(sharedFromA.every((hit) => hit.documentId === a.document.id));
+      });
+    });
+
+    it('answers a tenancy that is not yours with silence, not an error', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy } = await indexedTenancy(pool, ['1. מבוא.']);
+        // Deliberately identical to a tenancy that exists but holds nothing
+        // indexed: a distinct error would confirm the tenancy exists, which is
+        // an isolation leak wearing an error code.
+        assert.deepEqual(
+          await occupancy.searchClauses({
+            tenancyId: newId(),
+            query: 'דמי השכירות',
+          }),
+          [],
+        );
+      });
+    });
+
+    it('replaces a tenancy’s vectors when the document is read again', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, tenancy, document } = await indexedTenancy(pool, [
+          '10. דמי השכירות יעמדו על סך של 5,840 ש"ח.',
+        ]);
+        const before = await occupancy.searchClauses({
+          tenancyId: tenancy.id,
+          query: 'דמי השכירות',
+        });
+        assert.equal(before.length, 1);
+
+        await occupancy.ingestDocument({ documentId: document.id }, actor);
+
+        // One clause in, one clause out. A re-read that added a second copy
+        // would rank the same text twice and cite it twice.
+        const after = await occupancy.searchClauses({
+          tenancyId: tenancy.id,
+          query: 'דמי השכירות',
+        });
+        assert.equal(after.length, 1);
+        assert.notEqual(after[0]?.chunkId, before[0]?.chunkId);
+      });
+    });
+
+    it('refuses an empty query and a limit out of range', async (t) => {
+      await withPool(t, async (pool) => {
+        const { occupancy, tenancy } = await indexedTenancy(pool, ['1. מבוא.']);
+        const invalid = (error: KernelError) => error.code === 'invalid';
+        await assert.rejects(
+          occupancy.searchClauses({ tenancyId: tenancy.id, query: '   ' }),
+          invalid,
+        );
+        await assert.rejects(
+          occupancy.searchClauses({
+            tenancyId: tenancy.id,
+            query: 'x',
+            limit: 0,
+          }),
+          invalid,
+        );
+        await assert.rejects(
+          occupancy.searchClauses({
+            tenancyId: tenancy.id,
+            query: 'x',
+            limit: maxSearchLimit + 1,
+          }),
+          invalid,
+        );
+      });
+    });
+
+    it('leaves no chunks behind when the embedder fails', async (t) => {
+      await withPool(t, async (pool) => {
+        // The guarantee the ordering exists for: embedding runs before a single
+        // row is deleted, so a provider outage cannot leave a document with
+        // clauses that have no vectors — a state every screen counting clauses
+        // would render as "indexed".
+        const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+        const store = createMemoryStore();
+        const good = world(
+          pool,
+          clock,
+          store,
+          pdfOf([pdfPage(1, ['1. מבוא.'])]),
+          embedder,
+        );
+        const building = await good.portfolio.addBuilding(
+          uniqueAddress(),
+          actor,
+        );
+        const unit = await good.portfolio.addUnit(
+          { buildingId: building.id, label: '2', floor: 1 },
+          actor,
+        );
+        const tenancy = await good.occupancy.openTenancy(
+          { unitId: unit.id, startsOn: '2026-01-01' },
+          actor,
+        );
+        const document = await good.occupancy.attachDocument(
+          {
+            tenancyId: tenancy.id,
+            kind: 'lease',
+            contentType: 'application/pdf',
+            bytes: Buffer.from('%PDF-1.7\nlease\n%%EOF'),
+          },
+          actor,
+        );
+        await good.occupancy.ingestDocument({ documentId: document.id }, actor);
+        const indexed = await good.occupancy.listChunks(document.id);
+        assert.equal(indexed.length, 1);
+
+        // The same document, re-read by a world whose embedder is down.
+        const broken = world(
+          pool,
+          clock,
+          store,
+          pdfOf([pdfPage(1, ['1. מבוא.', '2. סיום.'])]),
+          createUnconfiguredEmbedder(),
+        );
+        await assert.rejects(
+          broken.occupancy.ingestDocument({ documentId: document.id }, actor),
+          (error: KernelError) => error.code === 'unavailable',
+        );
+
+        // The previous pass survived intact: not deleted, not half-replaced.
+        const after = await good.occupancy.listChunks(document.id);
+        assert.deepEqual(
+          after.map((chunk) => chunk.id),
+          indexed.map((chunk) => chunk.id),
+        );
       });
     });
   });

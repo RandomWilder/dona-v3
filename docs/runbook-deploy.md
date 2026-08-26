@@ -212,6 +212,64 @@ If the password is too short, or only one of the two secrets is set, **boot
 fails** and the revision never serves. That is on purpose: a deploy with no way
 in, or with a weak way in, should be loud.
 
+## Secrets, and how a key gets in (slice 12.2)
+
+Secret Manager is the single source of truth for staging and prod. The repo has never held a
+credential; `.env` holds local development values only and is gitignored.
+
+**One command, for every key there will ever be:**
+
+```
+./infra/set-secret.sh <staging|prod> <name>      # prompts, input hidden
+pbpaste | ./infra/set-secret.sh staging openai-api-key   # or piped
+```
+
+It creates the secret if it is new, adds a version if it exists — so **rotation is the same
+command** — and grants the environment's runtime service account access to that one secret.
+The value is never a command-line argument, because arguments reach shell history and `ps`.
+
+| secret | set by | read by |
+|---|---|---|
+| `<env>-database-url` | `bootstrap.sh`, generated | the app |
+| `<env>-staff-seed-*` · `<env>-staff-viewer-*` | `bootstrap.sh`, generated | the app at boot |
+| `<env>-openai-api-key` | **you**, via `set-secret.sh` | the app, for embeddings |
+
+**The gotcha worth knowing once:** Cloud Run resolves `:latest` when an instance starts, not when
+a version is added. A rotated key reaches the service only when a new revision rolls — merge
+anything to `main`, or roll one deliberately:
+
+```
+gcloud run services update dona-staging --region me-west1 --project dona-v3 \
+  --update-env-vars ROTATED_AT=$(date +%s)
+```
+
+The boot line names what the service actually resolved: `embeddings: openai:…` when a key is
+live, `embeddings: unconfigured` when there is none. A revision with no key does not fail — it
+refuses to embed and says so, which is the loud version of missing.
+
+## What the database is allowed to do
+
+```
+./infra/db-capabilities.sh <staging|prod>
+```
+
+Read-only. It reports the server version, whether the runtime user may `CREATE EXTENSION`, and
+which of the extensions we care about are available and installed. Measured on staging
+2026-08-26:
+
+```
+user       dona
+server     PostgreSQL 16.14
+superuser  yes — may CREATE EXTENSION from the supported list
+extension  vector available 0.8.5 · installed 0.8.5
+extension  btree_gist available 1.7 · installed no
+```
+
+That is why `0012_embeddings.sql` may create the `vector` extension itself: the permission was
+measured before the line was written, rather than discovered by a migration failing at boot —
+which is a deployed revision that will not start. The same answer unblocks week 6's exclusion
+constraint over `daterange`, which needs `btree_gist`.
+
 ## Private document store (slice 7.0)
 
 Real tenant documents — signed leases and what comes with them — live in a

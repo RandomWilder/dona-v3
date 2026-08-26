@@ -1,6 +1,8 @@
 import type { Pool, PoolClient } from 'pg';
 import type { ActorKind, AuditLog } from '../../kernel/audit.ts';
 import type { Clock } from '../../kernel/clock.ts';
+import { readEmbeddingSettings, type Settings } from '../../kernel/config.ts';
+import type { Embedder } from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
@@ -26,6 +28,12 @@ export type DocumentKind = (typeof documentKinds)[number];
 // argument staff's role matrix makes: rule 4 governs tunables, and a size cap a
 // database write could raise is a memory-exhaustion lever rather than a policy.
 export const maxDocumentBytes = 20 * 1024 * 1024;
+
+// How many clauses a search returns unless the caller says otherwise. Enough for
+// week 4's agent to have a second candidate when the first does not answer the
+// question, few enough that a prompt built from them stays readable.
+export const defaultSearchLimit = 8;
+export const maxSearchLimit = 50;
 
 // PDF alone, because slice 12.1 extracts text from a PDF and nothing else. A
 // scan arrives as a PDF too; OCR is week 3's cut line, logged as manual entry.
@@ -75,6 +83,28 @@ export interface Documents {
   ): Promise<Ingestion>;
   listChunks(documentId: string): Promise<ChunkRecord[]>;
   countChunks(tenancyId: string): Promise<Record<string, number>>;
+  searchClauses(input: SearchClausesInput): Promise<ClauseHit[]>;
+}
+
+export interface SearchClausesInput {
+  // Required, with no default and no optional form. There is no code path here
+  // that searches every lease -- an "all tenancies" search is not a feature this
+  // module declines to expose, it is a shape that does not exist.
+  tenancyId: string;
+  query: string;
+  limit?: number;
+}
+
+// What a citation needs: where the text is, and what it says.
+export interface ClauseHit {
+  chunkId: string;
+  documentId: string;
+  clauseRef: string | null;
+  heading: string | null;
+  pageFrom: number;
+  pageTo: number;
+  text: string;
+  distance: number;
 }
 
 export interface IngestDocumentInput {
@@ -112,6 +142,8 @@ export interface DocumentDeps {
   portfolio: Portfolio;
   store: ObjectStore;
   pdf: PdfText;
+  embedder: Embedder;
+  settings: Settings;
 }
 
 // The default when nothing wired a store. It throws rather than remembering, so
@@ -326,7 +358,16 @@ export function createDocuments(deps: DocumentDeps): Documents {
           const pages = await deps.pdf.pages(object.bytes);
           const { chunks, imageOnlyPages } = chunkLease(pages);
 
-          await replaceChunks(document, chunks, {
+          // Embedded before the transaction opens, not inside it: this is a
+          // network call to a third party, and holding a Postgres transaction
+          // open across one is how a slow provider becomes a lock nobody can
+          // explain. The guarantee the transaction is there for survives
+          // anyway -- a failed embedding throws here, before a single row is
+          // deleted, so a document is never half-indexed and never left with
+          // clauses that have no vectors.
+          const embedding = await embedChunks(chunks);
+
+          await replaceChunks(document, chunks, embedding, {
             pageCount: pages.length,
             imageOnlyPages,
           });
@@ -364,6 +405,53 @@ export function createDocuments(deps: DocumentDeps): Documents {
       return counts;
     },
 
+    async searchClauses(input) {
+      const tenancyId = validId(input?.tenancyId, 'tenancyId');
+      const query = typeof input?.query === 'string' ? input.query.trim() : '';
+      if (query.length === 0) {
+        throw new KernelError(
+          'invalid',
+          'a search needs something to look for',
+        );
+      }
+      const limit = validLimit(input?.limit);
+
+      const { model } = await readEmbeddingSettings(deps.settings);
+      const [vector] = await deps.embedder.embed([query]);
+      if (!vector) {
+        throw new KernelError('unavailable', 'the query could not be embedded');
+      }
+
+      // The isolation filter, and the reason `tenancy_id` is a column on this
+      // table rather than a join away: it is a WHERE on the table being
+      // searched, which a query cannot be written without noticing.
+      const found = await pool.query<ChunkRow & { distance: number }>(
+        `SELECT c.id, c.document_id, c.tenancy_id, c.ordinal, c.clause_ref,
+                c.heading, c.page_from, c.page_to, c.text, c.created_at,
+                e.embedding <=> $2::vector AS distance
+           FROM occupancy_chunk_embeddings e
+           JOIN occupancy_document_chunks c ON c.id = e.chunk_id
+          WHERE e.tenancy_id = $1 AND e.model = $3
+          ORDER BY e.embedding <=> $2::vector
+          LIMIT $4`,
+        [tenancyId, toVector(vector), model, limit],
+      );
+
+      // An empty list for a tenancy with nothing indexed *and* for one that is
+      // not yours. Deliberately identical: a distinct error would confirm the
+      // tenancy exists, which is an isolation leak wearing an error code.
+      return found.rows.map((row) => ({
+        chunkId: row.id,
+        documentId: row.document_id,
+        clauseRef: row.clause_ref,
+        heading: row.heading,
+        pageFrom: Number(row.page_from),
+        pageTo: Number(row.page_to),
+        text: row.text,
+        distance: Number(row.distance),
+      }));
+    },
+
     async listChunks(documentId) {
       const id = validId(documentId, 'documentId');
       const found = await pool.query<ChunkRow>(
@@ -382,13 +470,42 @@ export function createDocuments(deps: DocumentDeps): Documents {
   // Either the whole re-read lands or none of it does: a half-replaced document,
   // some clauses from this pass and some from the last, is the shape that makes
   // a citation point at text no longer beside it.
+  // The vectors the clauses will be found by. Returns them beside the model that
+  // produced them, because the model id is part of the embedding row's key: a
+  // later model change adds a second set rather than overwriting this one.
+  async function embedChunks(
+    chunks: LeaseChunk[],
+  ): Promise<{ model: string; vectors: number[][] }> {
+    const { model } = await readEmbeddingSettings(deps.settings);
+    if (chunks.length === 0) {
+      return { model, vectors: [] };
+    }
+    const vectors = await deps.embedder.embed(chunks.map((c) => c.text));
+    if (vectors.length !== chunks.length) {
+      // Pairing a clause with another clause's vector is a silent corruption:
+      // every answer afterwards cites the wrong text and nothing looks broken.
+      throw new KernelError(
+        'unavailable',
+        'the embedder returned the wrong count',
+        {
+          expected: chunks.length,
+          received: vectors.length,
+        },
+      );
+    }
+    return { model, vectors };
+  }
+
   async function replaceChunks(
     document: DocumentRecord,
     chunks: LeaseChunk[],
+    embedding: { model: string; vectors: number[][] },
     read: { pageCount: number; imageOnlyPages: number[] },
   ): Promise<void> {
     const now = clock.now();
     await inTransaction(pool, async (client) => {
+      // The embeddings go with them, by ON DELETE CASCADE on the chunk: an
+      // embedding is derived from a clause and is meaningless without it.
       await client.query(
         'DELETE FROM occupancy_document_chunks WHERE document_id = $1',
         [document.id],
@@ -403,14 +520,15 @@ export function createDocuments(deps: DocumentDeps): Documents {
           WHERE id = $1`,
         [document.id, now, read.pageCount, read.imageOnlyPages],
       );
-      for (const chunk of chunks) {
+      for (const [at, chunk] of chunks.entries()) {
+        const chunkId = newId(clock);
         await client.query(
           `INSERT INTO occupancy_document_chunks
              (id, document_id, tenancy_id, ordinal, clause_ref, heading,
               page_from, page_to, text, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
-            newId(clock),
+            chunkId,
             document.id,
             document.tenancyId,
             chunk.ordinal,
@@ -422,9 +540,45 @@ export function createDocuments(deps: DocumentDeps): Documents {
             now,
           ],
         );
+        const vector = embedding.vectors[at];
+        if (!vector) {
+          throw new KernelError('unavailable', 'a clause has no vector', {
+            ordinal: chunk.ordinal,
+          });
+        }
+        await client.query(
+          `INSERT INTO occupancy_chunk_embeddings
+             (chunk_id, tenancy_id, model, embedding, created_at)
+           VALUES ($1, $2, $3, $4::vector, $5)`,
+          [chunkId, document.tenancyId, embedding.model, toVector(vector), now],
+        );
       }
     });
   }
+}
+
+// pgvector's text input: '[0.1,0.2,…]'. Built here rather than passed as an
+// array, because node-postgres would send a Postgres array and the cast would
+// fail on a type nobody asked for.
+function toVector(values: number[]): string {
+  return `[${values.join(',')}]`;
+}
+
+function validLimit(value: unknown): number {
+  if (value === undefined || value === null) {
+    return defaultSearchLimit;
+  }
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > maxSearchLimit
+  ) {
+    throw new KernelError('invalid', 'limit is out of range', {
+      max: maxSearchLimit,
+    });
+  }
+  return value;
 }
 
 async function inTransaction(

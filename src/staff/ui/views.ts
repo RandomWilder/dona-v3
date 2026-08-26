@@ -381,9 +381,58 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
             <a href="/admin/documents/${detail.document.id}">המסמך המקורי</a>
           </p>
           ${readingNote(detail.document)}
+          ${searchCard(detail)}
           ${errorNote(context)}
           ${body}
         </section>`;
+}
+
+// Ask this tenancy's lease a question. The thinnest surface that can prove the
+// slice: retrieval is a module command, and week 4's agent is what turns hits
+// into a Hebrew sentence -- this only shows which clauses came back and how far
+// each was, because that is what a human verifies a citation against.
+//
+// A GET with the question in the query string, so a search is a link that can be
+// reloaded and shared, and so nothing here needs JavaScript.
+//
+// The tenancy is never in this form. It is resolved on the server from the unit
+// the operator opened -- the same rule 11.2 wrote for the upload, and the reason
+// editing the URL cannot reach another tenancy's lease.
+function searchCard(detail: DocumentChunks): Html {
+  const action = `/admin/units/${detail.unit.unit.id}/documents/${detail.document.id}/chunks`;
+  const asked = detail.search;
+  const results = !asked
+    ? h``
+    : asked.hits.length === 0
+      ? h`<p class="empty-state">לא נמצאו סעיפים מתאימים בחוזה הזה.</p>`
+      : h`<ol class="hits">${asked.hits.map(
+          (hit) => h`<li>
+                <p class="muted">
+                  ${
+                    hit.clauseRef
+                      ? clauseTag(hit.clauseRef)
+                      : h`<span class="muted">ללא מספור</span>`
+                  }
+                  · ${pageRange(hit.pageFrom, hit.pageTo)}
+                  · <span dir="ltr">${hit.distance.toFixed(3)}</span>
+                </p>
+                <p class="clause">${hit.text}</p>
+              </li>`,
+        )}</ol>`;
+
+  return h`<div class="card">
+          <h2>חיפוש בסעיפי החוזה</h2>
+          <form method="get" action="${action}" class="stack">
+            <p class="field">
+              <label for="f-q">שאלה</label>
+              <input id="f-q" name="q" type="search"
+                     value="${asked?.query ?? ''}"
+                     placeholder="מה גובה דמי השכירות?" required />
+            </p>
+            <button type="submit" class="submit">חיפוש</button>
+          </form>
+          ${results}
+        </div>`;
 }
 
 // What the reader could and could not see. The pages with no text layer are

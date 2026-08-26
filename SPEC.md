@@ -53,6 +53,7 @@ One shape everywhere: `{ code, message, details? }`. Codes: `not_found` · `not_
 - Fail-closed verification: no personal data before server-side possession proof (verified sender / OTP to number-on-record).
 - Absolute tenant isolation enforced at the query layer (every read scoped by verified occupancy) — proven by tests that attempt to cross it.
 - PII never in logs; parameterized queries; validate all inputs at the edge; rate-limit public endpoints.
+- **Third parties that see tenant text are named here, not discovered later.** As of slice 12.2 lease clause text is sent to OpenAI to be embedded — a real contract's contents leaving our infrastructure. The consent basis is in the lease itself, which contemplates the landlord passing tenant data to third parties providing IT services (`docs/reference/lease-template-donadom.md`), and the same note's warning applies: worth knowing, and worth not exceeding. Any further processor gets a line here before it gets a call.
 
 ## Status
 

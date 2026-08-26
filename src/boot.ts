@@ -3,7 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
 import { buildApp } from './app.ts';
+import { createSettings, readEmbeddingSettings } from './kernel/config.ts';
 import { createPool } from './kernel/db.ts';
+import {
+  createOpenAiEmbedder,
+  createUnconfiguredEmbedder,
+  type Embedder,
+} from './kernel/embeddings.ts';
 import { migrate } from './kernel/migrate.ts';
 import {
   createGcsStore,
@@ -62,12 +68,13 @@ export async function startServer(options: BootOptions): Promise<string> {
     password: process.env.STAFF_VIEWER_PASSWORD,
   });
   const store = resolveStore(process.env);
-  const app = buildApp({ pool, version, store });
+  const embedder = await resolveEmbedder(process.env, pool);
+  const app = buildApp({ pool, version, store, embedder });
   await app.listen({ port: options.port, host: options.host });
   // All three reported, so a deploy that seeded one and not the other — or that
   // is holding lease documents in memory — says so on the line an operator
   // actually reads.
-  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason} · docs: ${store.describe()}`;
+  return `dona-v3 ${version} listening on ${options.host}:${options.port} — staff seed: ${seed.reason} · viewer seed: ${viewer.reason} · docs: ${store.describe()} · embeddings: ${embedder.describe()}`;
 }
 
 // Where lease documents go. Absent DOCS_BUCKET is not an error: locally there is
@@ -79,6 +86,29 @@ export function resolveStore(
 ): ObjectStore {
   const bucket = env.DOCS_BUCKET?.trim();
   return bucket ? createGcsStore({ bucket }) : createMemoryStore();
+}
+
+// How clause text becomes vectors. Absent OPENAI_API_KEY is not a boot error —
+// a clean clone must still start, and most of this system has nothing to do
+// with embeddings — but it is not a silent fallback either: the embedder that
+// comes back refuses every call and *says so* on the boot line. Indexing a
+// lease into vectors that match nothing is the failure a quiet default would
+// hide, and it stays hidden until a tenant asks a question and gets silence.
+//
+// The model and its width come from config rows rather than from here (SPEC.md
+// rule 4), read once at boot.
+export async function resolveEmbedder(
+  env: Record<string, string | undefined>,
+  pool: Pool,
+): Promise<Embedder> {
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    return createUnconfiguredEmbedder();
+  }
+  const { model, dimensions } = await readEmbeddingSettings(
+    createSettings(pool),
+  );
+  return createOpenAiEmbedder({ apiKey, model, dimensions });
 }
 
 // First `docker compose up` — and a cold Cloud SQL instance — need a few

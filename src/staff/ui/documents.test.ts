@@ -5,6 +5,8 @@ import { buildApp } from '../../app.ts';
 import { createIdentity } from '../../identity/contract.ts';
 import { newId } from '../../kernel/ids.ts';
 import { createMemoryStore } from '../../kernel/objects.ts';
+import { embeddingColumnDimensions } from '../../kernel/config.ts';
+import { createFakeEmbedder } from '../../kernel/embeddings.ts';
 import { samplePdf } from '../../kernel/pdf-sample.ts';
 import { migratedPoolOrNull, skipReason } from '../../kernel/pg-support.ts';
 import { type Actor, createOccupancy } from '../../occupancy/contract.ts';
@@ -113,6 +115,7 @@ describe('lease documents at the edge', () => {
         pool,
         version: '11.2-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const cookie = await loginAs(pool, app, 'admin');
       const place = await seedPlace(pool);
@@ -168,6 +171,7 @@ describe('lease documents at the edge', () => {
         pool,
         version: '11.2-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const cookie = await loginAs(pool, app, 'viewer');
       const place = await seedPlace(pool);
@@ -214,6 +218,7 @@ describe('lease documents at the edge', () => {
         pool,
         version: '11.2-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const cookie = await loginAs(pool, app, 'admin');
       const place = await seedPlace(pool);
@@ -247,6 +252,7 @@ describe('lease documents at the edge', () => {
         pool,
         version: '11.2-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const place = await seedPlace(pool);
 
@@ -321,6 +327,7 @@ describe('lease chunks at the edge', () => {
         pool,
         version: '12.1-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const cookie = await loginAs(pool, app, 'admin');
       const place = await seedPlace(pool);
@@ -405,6 +412,7 @@ describe('lease chunks at the edge', () => {
         pool,
         version: '12.1-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const admin = await loginAs(pool, app, 'admin');
       const place = await seedPlace(pool);
@@ -457,6 +465,7 @@ describe('lease chunks at the edge', () => {
         pool,
         version: '12.1-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const cookie = await loginAs(pool, app, 'admin');
       const mine = await seedPlace(pool);
@@ -503,6 +512,7 @@ describe('lease chunks at the edge', () => {
         pool,
         version: '12.1-test',
         store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
       });
       const place = await seedPlace(pool);
       const read = await app.inject({
@@ -510,6 +520,65 @@ describe('lease chunks at the edge', () => {
         url: `/admin/units/${place.unit.id}/documents/${newId()}/chunks`,
       });
       assert.equal(read.headers.location, '/admin/login');
+    });
+  });
+  it('searches this tenancy’s clauses, and cannot be pointed at another’s', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '12.2-test',
+        store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
+      });
+      const cookie = await loginAs(pool, app, 'admin');
+      const place = await seedPlace(pool);
+      await uploaded(app, cookie, place.unit.id);
+
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [place.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+      const base = `/admin/units/${place.unit.id}/documents/${documentId}/chunks`;
+
+      await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/ingest`,
+        headers: {
+          cookie,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: '',
+      });
+
+      // No question asked: the field is there, and no results are claimed.
+      const empty = await app.inject({
+        method: 'GET',
+        url: base,
+        headers: { cookie },
+      });
+      assert.equal(empty.statusCode, 200);
+      assert.ok(empty.body.includes('חיפוש בסעיפי החוזה'));
+      assert.ok(!empty.body.includes('לא נמצאו סעיפים'));
+
+      const found = await app.inject({
+        method: 'GET',
+        url: `${base}?q=${encodeURIComponent('Rent is payable monthly in advance.')}`,
+        headers: { cookie },
+      });
+      assert.equal(found.statusCode, 200);
+      assert.ok(found.body.includes('Rent is payable monthly'));
+
+      // The tenancy the search filters on is resolved from the unit on the
+      // server, so a URL that pairs this document with a *different* unit is a
+      // caller-supplied claim and is refused -- rather than quietly searching
+      // one tenancy while displaying another's heading.
+      const crossed = await app.inject({
+        method: 'GET',
+        url: `/admin/units/${place.vacant.id}/documents/${documentId}/chunks?q=rent`,
+        headers: { cookie },
+      });
+      assert.equal(crossed.statusCode, 404);
     });
   });
 });

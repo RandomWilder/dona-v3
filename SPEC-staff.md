@@ -277,6 +277,24 @@ The unit page's read/unread state comes from `ingested_at` for the same reason. 
 is a different question: a document that was read and produced nothing would otherwise be
 indistinguishable from one nobody has opened.
 
+### Asking the lease a question (slice 12.2)
+
+A search field on the chunks page, `GET` with the question in `?q=`. It adds no access rule
+either: it rides inside `getDocumentChunks`, which is already `read` and already audited, so
+asking a lease a question leaves the same row as opening it.
+
+`GET` rather than `POST` on purpose — a search is a link that can be reloaded and shared, and
+nothing on the page needs JavaScript, which is the property the admin shell states about itself.
+
+**The tenancy is never in the form.** It is resolved server-side from the unit the operator
+opened, so editing the URL cannot point the search at another tenancy's lease: the pair of ids in
+the path is already checked to belong together, and a mismatched pair is `not_found` rather than a
+search of one tenancy displayed under another's heading.
+
+It shows the clause reference, the pages and the distance — not an answer. Turning hits into a
+Hebrew sentence with a citation is week 4's agent; this surface exists so a human can verify that
+the right clause came back, which is the whole of slice 12.2's bar.
+
 ## The views (slice 10.1)
 
 ROADMAP week 2's last bar: *the pilot building is browsable on staging*. `נכסים` and `אנשים`

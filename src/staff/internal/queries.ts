@@ -4,6 +4,7 @@ import { systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import type {
   ChunkRecord,
+  ClauseHit,
   DocumentRecord,
   OccupancyResolution,
   TenancyView,
@@ -46,6 +47,10 @@ export interface DocumentChunks {
   unit: UnitView;
   document: DocumentRecord;
   chunks: ChunkRecord[];
+  // Slice 12.2. Present only when the operator asked something: `null` is "no
+  // search was run", which the screen renders differently from an empty list —
+  // a search that found nothing is a fact worth showing.
+  search: { query: string; hits: ClauseHit[] } | null;
 }
 
 export interface PersonDetail {
@@ -75,6 +80,7 @@ export interface StaffQueries {
     unitId: string,
     documentId: string,
     session: Session,
+    query?: string,
   ): Promise<DocumentChunks>;
   getPersonDetail(personId: string, session: Session): Promise<PersonDetail>;
 }
@@ -159,7 +165,7 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         deps.occupancy.readDocument(documentId),
       ),
 
-    getDocumentChunks: (unitId, documentId, session) =>
+    getDocumentChunks: (unitId, documentId, session, query) =>
       guardAudited('getDocumentChunks', documentId, session, async () => {
         const unit = await deps.portfolio.getUnit(unitId);
         // The document has to be this unit's, checked here rather than assumed
@@ -175,10 +181,26 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         if (!document) {
           throw new KernelError('not_found', 'document not found');
         }
+        // The tenancy comes from the server-side lookup above, never from the
+        // request. That is what makes this search unable to reach another
+        // tenancy's lease even if someone edits the URL: the id it filters on
+        // was resolved from the unit the operator opened.
+        const asked = typeof query === 'string' ? query.trim() : '';
+        const search =
+          asked.length > 0 && tenancy
+            ? {
+                query: asked,
+                hits: await deps.occupancy.searchClauses({
+                  tenancyId: tenancy.tenancy.id,
+                  query: asked,
+                }),
+              }
+            : null;
         return {
           unit,
           document,
           chunks: await deps.occupancy.listChunks(document.id),
+          search,
         };
       }),
 
