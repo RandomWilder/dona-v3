@@ -137,18 +137,45 @@ chunking by its own numbering. Merged as [#20](https://github.com/RandomWilder/d
 [#22](https://github.com/RandomWilder/dona-v3/pull/22); staging serves `99aac93`. Evidence:
 `tasks/evidence/day-12-chunking.md`.
 
-### Slice 12.2 — Embeddings → pgvector, scoped by occupancy ☐
-> **Started after 12.1 closed.** 12.1 took three commits rather than one, because the real lease
-> disagreed with the first cut twice and both disagreements were worth fixing before retrieval
-> sat on top of them. The chunk rows it leaves behind already carry `tenancy_id` for exactly this
-> slice's isolation filter.
-
-- [ ] pgvector index; **every retrieval query filtered by occupancy** — SPEC.md's isolation rule at the query layer, the same seam 7.1 built
-- [ ] An isolation test that *attempts the crossing*: tenant A's question must not reach tenant B's lease, asserted in both directions
-- [ ] Model id and dimensions are config rows, not constants (SPEC.md rule 4)
+### Slice 12.2 — Embeddings → pgvector, scoped by occupancy ☑
+- [x] pgvector index; **every retrieval query filtered by occupancy** — SPEC.md's isolation rule at the query layer, the same seam 7.1 built
+- [x] An isolation test that *attempts the crossing*: tenant A's question must not reach tenant B's lease, asserted in both directions
+- [x] Model id and dimensions are config rows, not constants (SPEC.md rule 4)
+- [x] **The first model call this project has ever made.** `kernel/embeddings.ts` joins `objects.ts`
+      and `pdf.ts` as a port: OpenAI over `fetch`, no SDK, `text-embedding-3-large` at 1536
+      dimensions because hnsw caps at 2000 and the model is natively 3072. No key → it **throws**
+      rather than returning zeros, and the boot line says so
+- [x] **The repo's first config mechanism**, because rule 4 asks for the model id as a row and
+      nothing config-shaped existed. One table, a typed reader, no admin screen (week 5's
+      `catalog`). The dimension is schema *and* config, so the reader refuses when the row and the
+      column disagree rather than failing on the two-hundredth clause
+- [x] **Two infrastructure pieces**, both from doing this properly rather than quickly.
+      `infra/set-secret.sh` is now the only way a credential enters this system — Secret Manager as
+      the single source of truth, the value never a command-line argument, the grant per secret,
+      rotation the same command. `infra/db-capabilities.sh` measured what the database permits
+      *before* the migration was written, and **closed a carry item open since 7.1**: `btree_gist`
+      is available and the runtime user may install it, so week 6's exclusion constraint is
+      unblocked
+- [x] **Three defects the real lease found after merge** — phantom clauses out of wrapped
+      sentences, headings ranking as answers, and a screen misreporting its own result count.
+      273 → 221 chunks ([#25](https://github.com/RandomWilder/dona-v3/pull/25))
 
 **Done when:** a question retrieves clauses from one lease and provably cannot reach another's.
 **Verify:** the isolation test, plus `npm run evals`. · Size: M→L
+**Closed 2026-08-26 — the bar, met and evidenced.** Both questions return the clause that answers
+them: `נספח א׳ §10` for the rent, `נספח א׳ §5` for the term. Isolation is proven by a test that
+**attempts the crossing** — two near-identical leases, each asking for the other's exact text,
+asserted in both directions — and a tenancy that is not yours answers with silence rather than an
+error that would confirm it exists. The boot line reads
+`embeddings: openai:text-embedding-3-large@1536`; ingest went 2.9s → 10.9s, which is the cost of
+embedding 221 clauses and the reason auto-ingest stays deferred. Merged as
+[#24](https://github.com/RandomWilder/dona-v3/pull/24) and
+[#25](https://github.com/RandomWilder/dona-v3/pull/25); staging serves `f2834a9`. Evidence:
+`tasks/evidence/day-12-embeddings.md`.
+
+**Day 12 closed 2026-08-26 — both slices, five PRs.** The lease is clauses, the clauses are
+findable, and they are findable **only from the tenancy that owns them**. What is not yet good is
+the *order* they come back in — carried to 14.1 with a diagnosis rather than a shrug.
 
 ## Day 13 (Wed) — The digital twin
 
@@ -171,9 +198,32 @@ chunking by its own numbering. Merged as [#20](https://github.com/RandomWilder/d
 ## Day 14 (Thu) — Retrieval that refuses
 
 ### Slice 14.1 — Guidance docs + the ranking rule ☐
+> **Arrives with a measured problem and a starting hypothesis, from 12.2.** Retrieval works and
+> is isolated; what it is not yet is *ordered*. Both of the owner's staging questions returned the
+> right clause outside the top two, and the same two chunks won both — see below. This slice is
+> where that becomes fixable, because it is the slice that builds the instrument.
+
 - [ ] Company policy documents through the same pipeline
 - [ ] Retrieval ranks **this occupancy's lease → policy → refuse**, in that order, and the refusal is a real answer rather than a fallback
 - [ ] An off-lease question returns **"unknown + escalate"**, never an invention
+- [ ] **The two questions from 12.2 are the first two golden cases**, with their measured answers:
+      `מה גובה דמי השכירות?` → `נספח א׳ §10` (was 5th of 8) and `עד מתי חוזה השכירות?` →
+      `נספח א׳ §5` (was 3rd of 8, distance `0.428`). A ranking change that does not move these is
+      not a fix
+- [ ] **The hypothesis to test first: long heterogeneous chunks are universal attractors.** The
+      front page and an annex cover — parties, dates, addresses, parcel numbers, boilerplate — won
+      *both* questions on unrelated topics. A chunk like that embeds near the centre of the space
+      and sits close to everything. Every distance in both result sets fell between `0.35` and
+      `0.51`, relevant and irrelevant alike, which is what "not discriminating" looks like from
+      outside. Candidate answers: hybrid retrieval (keyword + vector), tighter chunk sizing for
+      mixed-content pages, or down-weighting front matter — **measured, not guessed**
+- [ ] **A privacy decision, not only an accuracy one.** That front page is the PII-densest chunk
+      in the document — two names, two ID numbers, two phones, an email — and is currently the
+      most likely text retrieved for any vague question. Week 4's agent feeds top hits into a
+      prompt, so those hits reach the model. Decide it here deliberately rather than inherit it
+- [ ] **`נספח א׳`'s two-column layout is half solved** (12.1). `§5` interleaves the label column
+      with the value column: the dates survive and are readable, the sentence is braided. It is
+      the annex the twin reads, so a second pass belongs near this work
 
 **Done when:** a question with no grounding refuses instead of inventing.
 **Verify:** the golden set's refusal cases. · Size: M
@@ -201,6 +251,20 @@ chunking by its own numbering. Merged as [#20](https://github.com/RandomWilder/d
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 12 (second pass)
+
+- **Ranking is not good enough, and it is 14.1's** — moved into that slice above with the two
+  golden cases, the measured distances and the attractor hypothesis, rather than left as a
+  feeling. Nothing about it blocks day 13: the twin reads `נספח א׳ §5` and `§10` **by clause
+  reference** through `listChunks`, never by similarity.
+- **A running footer is still swallowed into the clause spanning it** (12.1). Detecting a repeated
+  footer needs the whole document rather than one page. Noise inside a chunk, not a wrong
+  citation.
+- **Ingest is synchronous and now takes ~11 seconds** (12.2). A browser waits on it. Auto-ingest
+  on upload wants the kernel's durable work (`work.ts`), which is its own slice.
+- **`staff`'s session sweep flaked a third time** (12.2's first gate run, passing the four after).
+  Still uncaptured, still wants `SPEC-staff.md` reasoning first.
 
 ## Carried in from day 12
 
