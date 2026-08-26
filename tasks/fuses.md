@@ -66,7 +66,14 @@ deletion path (week 6) has to know about all three:
 gs://dona-v3-staging-docs   the object
 gs://dona-v3-prod-docs      the object
 occupancy_documents         + occupancy_document_chunks   the row and the clause text
+occupancy_lease_facts       the term, the rent rule and the securities, quoted
 ```
+
+**A fourth place, as of slice 13.1.** The twin's fields are extracted *from* the contract and
+quote it — the rent's stated base figure, the securities' stated amounts, the deductible
+clauses' own words. Deleting the objects and the chunks would leave the lease's commercial terms
+readable in a third table. Four things now, and a deletion path (week 6) has to know about all
+four.
 
 ## 4. Model provider keys (slice 12.2)
 

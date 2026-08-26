@@ -295,6 +295,43 @@ It shows the clause reference, the pages and the distance — not an answer. Tur
 Hebrew sentence with a citation is week 4's agent; this surface exists so a human can verify that
 the right clause came back, which is the whole of slice 12.2's bar.
 
+## Reading the lease's fields (slice 13.1)
+
+A second button on the same page, and a section above the clauses that shows what came out.
+
+```
+POST /admin/units/:unitId/documents/:documentId/extract
+```
+
+**No new access rule, for the fourth time.** The POST is `mutate` — it writes rows, so a viewer
+is refused by the same guard that refuses them an ingest — and the fields are rendered inside
+`getDocumentChunks`, which is already `read` and already audited. Reading a lease's extracted
+term is the same privacy event as reading the clause it came from, and it leaves the same row.
+The unit-and-document pair is checked server-side exactly as it is for the ingest and the search.
+
+### The screen is a verification surface, and this time it has to be
+
+12.1's chunks page let a human spot-read clauses against the PDF. This one has a harder job: the
+values on it were produced by a **model**, and the slice's bar is that each one can be read
+against the document. So every field shows, beside its value, the clause reference it came from,
+the pages, and a link to the clause card further down the page — the citation is not a footnote
+here, it is the thing being checked.
+
+A field the extraction did not produce is shown as **absent, not as empty**. "The lease does not
+say" and "we did not manage to read it" are different facts, and a screen that renders both as a
+blank is the screen that makes an unread field look like a settled one.
+
+The values are rendered per field: a term as its initial period and its options, a rent as the
+base figure with its index and base month, never as one number. The screen has no arithmetic in
+it at all — SPEC.md rule 7 reaches the presentation layer as well, because a subtotal drawn on a
+page is a charge computed however carefully it is labelled.
+
+### Confirming and correcting is 13.2, and the screen says so
+
+Nothing here can be edited yet. An extraction is a claim until a human confirms it, and the
+surface that records who confirmed what is the next slice; until it exists the page states that
+these fields are unreviewed rather than presenting them as settled.
+
 ## The views (slice 10.1)
 
 ROADMAP week 2's last bar: *the pilot building is browsable on staging*. `נכסים` and `אנשים`

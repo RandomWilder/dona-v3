@@ -4,6 +4,7 @@ import { registerChannelUi } from './channel/contract.ts';
 import type { Clock } from './kernel/clock.ts';
 import type { Embedder } from './kernel/embeddings.ts';
 import { httpStatus, KernelError, toErrorBody } from './kernel/errors.ts';
+import type { Extractor } from './kernel/extraction.ts';
 import type { ObjectStore } from './kernel/objects.ts';
 import { registerUiAssets } from './kernel/ui/assets.ts';
 import { registerStaffUi } from './staff/contract.ts';
@@ -18,6 +19,9 @@ export interface AppDeps {
   // Same shape: absent, occupancy falls back to an embedder that refuses rather
   // than one that returns zeros.
   embedder?: Embedder;
+  // And again: absent, occupancy falls back to an extractor that refuses rather
+  // than one that reads a lease into no fields at all.
+  extractor?: Extractor;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
@@ -72,6 +76,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     clock: deps.clock,
     store: deps.store,
     embedder: deps.embedder,
+    extractor: deps.extractor,
   });
   registerChannelUi(app);
 

@@ -13,6 +13,8 @@ import type {
   AttachDocumentInput,
   DocumentRecord,
   EndTenancyInput,
+  Extraction,
+  ExtractTwinInput,
   IngestDocumentInput,
   Ingestion,
   Occupancy,
@@ -67,13 +69,17 @@ export interface StaffCommands {
     input: IngestDocumentInput,
     session: Session,
   ): Promise<Ingestion>;
+  // Slice 13.1. `mutate` for the fourth time and no new rule: reading a lease
+  // into fields writes rows, so a viewer may not do it -- and it is the same
+  // guard whether the rows come from a parser or from a model.
+  extractTwin(input: ExtractTwinInput, session: Session): Promise<Extraction>;
 }
 
 export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
   const clock = deps.clock ?? systemClock;
   const audit = deps.audit ?? createAuditLog(deps.pool, clock);
 
-  // One shape for all ten. The capability check runs *inside* the audited
+  // One shape for all eleven. The capability check runs *inside* the audited
   // work, so a refusal leaves an `error` row with code not_allowed rather than
   // no row at all — the pattern identity established for rejected commands —
   // and it runs *before* the module is reached, so a viewer never touches
@@ -142,6 +148,10 @@ export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
     ingestDocument: (input, session) =>
       guard('ingestDocument', 'mutate', session, (actor) =>
         deps.occupancy.ingestDocument(input, actor),
+      ),
+    extractTwin: (input, session) =>
+      guard('extractTwin', 'mutate', session, (actor) =>
+        deps.occupancy.extractTwin(input, actor),
       ),
   };
 }

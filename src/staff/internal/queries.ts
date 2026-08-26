@@ -6,6 +6,7 @@ import type {
   ChunkRecord,
   ClauseHit,
   DocumentRecord,
+  LeaseFact,
   OccupancyResolution,
   TenancyView,
 } from '../../occupancy/contract.ts';
@@ -51,6 +52,10 @@ export interface DocumentChunks {
   // search was run", which the screen renders differently from an empty list —
   // a search that found nothing is a fact worth showing.
   search: { query: string; hits: ClauseHit[] } | null;
+  // Slice 13.1. The fields extracted from this document, in the registry's
+  // order. Empty means nobody has pressed the button — which the screen says
+  // rather than rendering a lease that appears to state nothing.
+  facts: LeaseFact[];
 }
 
 export interface PersonDetail {
@@ -201,6 +206,10 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
           document,
           chunks: await deps.occupancy.listChunks(document.id),
           search,
+          // On the same audited read as the clauses, and deliberately: a field
+          // is the lease's own words rearranged, so seeing one is the same
+          // privacy event as opening the clause it was read out of.
+          facts: await deps.occupancy.listLeaseFacts(document.id),
         };
       }),
 

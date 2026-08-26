@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { resolveStore, resolveVersion } from './boot.ts';
+import { resolveExtractor, resolveStore, resolveVersion } from './boot.ts';
 
 describe('build identity', () => {
   it('reports the injected version when the deploy sets one', () => {
@@ -37,6 +37,20 @@ describe('build identity', () => {
     assert.equal(
       resolveStore({ DOCS_BUCKET: 'dona-v3-staging-docs' }).describe(),
       'gs://dona-v3-staging-docs',
+    );
+  });
+
+  // Same rule for the model key: a revision that cannot read a lease into
+  // fields must say so on the line, rather than producing a twin of nothing.
+  it('refuses to extract when no key is configured, and says which', () => {
+    assert.equal(resolveExtractor({}).describe(), 'unconfigured');
+    assert.equal(
+      resolveExtractor({ OPENAI_API_KEY: '  ' }).describe(),
+      'unconfigured',
+    );
+    assert.equal(
+      resolveExtractor({ OPENAI_API_KEY: 'sk-test' }).describe(),
+      'openai',
     );
   });
 });

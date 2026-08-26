@@ -99,3 +99,19 @@ export async function readEmbeddingSettings(
   }
   return { model, dimensions };
 }
+
+export const extractionSettingKeys = {
+  model: 'extraction.model',
+} as const;
+
+// Read per call rather than at boot, unlike the embedding model. See
+// SPEC-kernel.md, "Two settings, read at two different times": this one is
+// welded to nothing already stored, and a model id the account cannot serve
+// must be correctable with one row rather than with a deploy.
+//
+// No fallback constant that differs from the seed: the migration seeds this key
+// and the fallback exists for the same reason `text()` has one at all -- a
+// fresh database mid-migration must not take the process down.
+export async function readExtractionModel(settings: Settings): Promise<string> {
+  return settings.text(extractionSettingKeys.model, 'gpt-5');
+}

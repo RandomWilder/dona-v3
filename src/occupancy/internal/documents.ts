@@ -1,9 +1,14 @@
 import type { Pool, PoolClient } from 'pg';
 import type { ActorKind, AuditLog } from '../../kernel/audit.ts';
 import type { Clock } from '../../kernel/clock.ts';
-import { readEmbeddingSettings, type Settings } from '../../kernel/config.ts';
+import {
+  readEmbeddingSettings,
+  readExtractionModel,
+  type Settings,
+} from '../../kernel/config.ts';
 import type { Embedder } from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
+import type { Extractor } from '../../kernel/extraction.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
 import type { PdfText } from '../../kernel/pdf.ts';
@@ -11,6 +16,15 @@ import { asText, validId } from '../../kernel/validate.ts';
 import type { Portfolio } from '../../portfolio/contract.ts';
 import { chunkLease, type LeaseChunk } from './clauses.ts';
 import { documentPath } from './paths.ts';
+import {
+  buildRequest,
+  type Confidence,
+  type ExtractedField,
+  type LeaseField,
+  leaseFields,
+  readReply,
+  selectClauses,
+} from './twin.ts';
 
 // Lease documents, indexed per occupancy. See SPEC-occupancy.md, "Lease
 // documents": the row hangs off a tenancy and never off a unit or a person,
@@ -84,6 +98,47 @@ export interface Documents {
   listChunks(documentId: string): Promise<ChunkRecord[]>;
   countChunks(tenancyId: string): Promise<Record<string, number>>;
   searchClauses(input: SearchClausesInput): Promise<ClauseHit[]>;
+  // Slice 13.1: the lease's fields, each pointing at the clause it was read
+  // out of. Its own command and not a step of ingesting: ingestion is
+  // deterministic and already slow, and this is a judgement a human reviews.
+  extractTwin(
+    input: ExtractTwinInput,
+    actor: DocumentActor,
+  ): Promise<Extraction>;
+  listLeaseFacts(documentId: string): Promise<LeaseFact[]>;
+}
+
+export interface ExtractTwinInput {
+  documentId: string;
+}
+
+// What one pass over a document's clauses produced. `attempted` counts the
+// fields that had clauses worth sending, so `attempted - fields` is the honest
+// count of "the clauses were read and did not say" -- which is a different fact
+// from a field nobody looked for.
+export interface Extraction {
+  documentId: string;
+  tenancyId: string;
+  fields: number;
+  attempted: number;
+  model: string;
+}
+
+// One extracted field, and the clause it can be read against. Nothing reaches
+// this shape without a citation naming a clause that was actually sent.
+export interface LeaseFact {
+  id: string;
+  documentId: string;
+  tenancyId: string;
+  field: LeaseField;
+  value: Record<string, unknown>;
+  chunkId: string;
+  clauseRef: string | null;
+  pageFrom: number;
+  pageTo: number;
+  confidence: Confidence;
+  model: string;
+  extractedAt: string;
 }
 
 export interface SearchClausesInput {
@@ -143,6 +198,7 @@ export interface DocumentDeps {
   store: ObjectStore;
   pdf: PdfText;
   embedder: Embedder;
+  extractor: Extractor;
   settings: Settings;
 }
 
@@ -192,6 +248,24 @@ interface ChunkRow {
 
 const chunkColumns = `id, document_id, tenancy_id, ordinal, clause_ref, heading,
   page_from, page_to, text, created_at`;
+
+interface FactRow {
+  id: string;
+  document_id: string;
+  tenancy_id: string;
+  field: string;
+  value: Record<string, unknown>;
+  chunk_id: string;
+  clause_ref: string | null;
+  page_from: number;
+  page_to: number;
+  confidence: string;
+  model: string;
+  extracted_at: Date;
+}
+
+const factColumns = `id, document_id, tenancy_id, field, value, chunk_id,
+  clause_ref, page_from, page_to, confidence, model, extracted_at`;
 
 export function validDocumentKind(
   value: unknown,
@@ -462,6 +536,105 @@ export function createDocuments(deps: DocumentDeps): Documents {
       );
       return found.rows.map(toChunk);
     },
+
+    async extractTwin(input, actor) {
+      return audit.around(
+        {
+          actorKind: actor.kind,
+          actorId: actor.id,
+          action: 'occupancy.extractTwin',
+          subjectId: asText(input?.documentId),
+          // The document, and nothing out of it. A field's value quotes the
+          // contract, and audit_log is not a fourth place a real lease lands
+          // (tasks/fuses.md counts them).
+          inputs: { documentId: asText(input?.documentId) },
+        },
+        async () => {
+          const documentId = validId(input?.documentId, 'documentId');
+          const found = await pool.query<DocumentRow>(
+            `SELECT ${columns} FROM occupancy_documents WHERE id = $1`,
+            [documentId],
+          );
+          const row = found.rows[0];
+          if (!row) {
+            throw new KernelError('not_found', 'document not found');
+          }
+          const document = toDocument(row);
+
+          const stored = await pool.query<ChunkRow>(
+            `SELECT ${chunkColumns} FROM occupancy_document_chunks
+              WHERE document_id = $1
+              ORDER BY ordinal`,
+            [document.id],
+          );
+          const chunks = stored.rows.map(toChunk);
+          if (chunks.length === 0) {
+            // `invalid` and not an empty result: extraction reads clauses, and
+            // there are none to read. A document nobody ingested and a lease
+            // that says nothing about its own term are different facts.
+            throw new KernelError(
+              'invalid',
+              'the document has no clauses to read',
+            );
+          }
+
+          // Per call, not at boot: a model id the account cannot serve has to
+          // be correctable with one config row (SPEC-kernel.md).
+          const model = await readExtractionModel(deps.settings);
+          const extracted: ExtractedField[] = [];
+          let attempted = 0;
+          // One call per field, each carrying only the clauses that field could
+          // be in. Every call must come back before anything is written: a pass
+          // replaces the document's facts wholesale, and a pass with a failed
+          // call is not a pass. A throw here leaves the previous extraction
+          // intact, which is the guarantee 12.2 gives for a failed embedding.
+          for (const field of leaseFields) {
+            const selected = selectClauses(field, chunks);
+            if (selected.length === 0) {
+              continue;
+            }
+            attempted += 1;
+            const reply = await deps.extractor.extract(
+              buildRequest(field, model, selected),
+            );
+            // Believed only if its citation names a clause that was sent.
+            const read = readReply(field, reply, selected);
+            if (read) {
+              extracted.push(read);
+            }
+          }
+
+          await replaceFacts(document, extracted, model);
+
+          return {
+            documentId: document.id,
+            // Copied from the document row and never taken from a caller, as
+            // everywhere else in this module.
+            tenancyId: document.tenancyId,
+            fields: extracted.length,
+            attempted,
+            model,
+          };
+        },
+      );
+    },
+
+    async listLeaseFacts(documentId) {
+      const id = validId(documentId, 'documentId');
+      const found = await pool.query<FactRow>(
+        `SELECT ${factColumns} FROM occupancy_lease_facts
+          WHERE document_id = $1`,
+        [id],
+      );
+      // In the registry's order rather than the table's. The order the fields
+      // are declared in is the order a lease is read in, and SQL has no opinion
+      // about which of `term` and `rent` comes first.
+      return found.rows
+        .map(toFact)
+        .sort(
+          (a, b) => leaseFields.indexOf(a.field) - leaseFields.indexOf(b.field),
+        );
+    },
   };
 
   // Delete then insert, in one transaction. Chunks are *derived* data with a
@@ -555,6 +728,64 @@ export function createDocuments(deps: DocumentDeps): Documents {
       }
     });
   }
+
+  // Delete then insert, in one transaction, as chunks are -- facts are derived
+  // data with a natural key, `UNIQUE (document_id, field)`, so re-extracting is
+  // a replacement rather than a second copy. A field this pass did not produce
+  // is a field this document no longer claims: leaving yesterday's value beside
+  // today's would be a twin nobody could date.
+  async function replaceFacts(
+    document: DocumentRecord,
+    fields: ExtractedField[],
+    model: string,
+  ): Promise<void> {
+    const now = clock.now();
+    await inTransaction(pool, async (client) => {
+      await client.query(
+        'DELETE FROM occupancy_lease_facts WHERE document_id = $1',
+        [document.id],
+      );
+      for (const field of fields) {
+        await client.query(
+          `INSERT INTO occupancy_lease_facts
+             (id, document_id, tenancy_id, field, value, chunk_id, clause_ref,
+              page_from, page_to, confidence, model, extracted_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            newId(clock),
+            document.id,
+            document.tenancyId,
+            field.field,
+            JSON.stringify(field.value),
+            field.chunkId,
+            field.clauseRef,
+            field.pageFrom,
+            field.pageTo,
+            field.confidence,
+            model,
+            now,
+          ],
+        );
+      }
+    });
+  }
+}
+
+function toFact(row: FactRow): LeaseFact {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    tenancyId: row.tenancy_id,
+    field: row.field as LeaseField,
+    value: row.value,
+    chunkId: row.chunk_id,
+    clauseRef: row.clause_ref,
+    pageFrom: Number(row.page_from),
+    pageTo: Number(row.page_to),
+    confidence: row.confidence as Confidence,
+    model: row.model,
+    extractedAt: row.extracted_at.toISOString(),
+  };
 }
 
 // pgvector's text input: '[0.1,0.2,…]'. Built here rather than passed as an

@@ -582,6 +582,155 @@ Unaudited here, as this module's other reads are. Its callers audit their own us
 - **Re-embedding on a model change.** The table can hold two models at once; nothing orchestrates
   moving between them.
 
+## The digital twin (slice 13.1)
+
+12.1 cut the lease into clauses and 12.2 made them findable. Neither lets this system **state a
+fact about the tenancy**: when the term ends, what the rent rule is, what was deposited. Those
+live as prose inside a clause, and week 4's agent and week 5's cases both need them as fields.
+
+This slice extracts them, and its one hard rule is that **a field is only ever as good as the
+clause it points at**. Every stored field carries the chunk it came from, so an operator — and
+13.2's reviewer — can read the value against the text that produced it.
+
+| Table | Holds |
+|---|---|
+| `occupancy_lease_facts` | `id`, `document_id`, `tenancy_id`, `field`, `value`, `chunk_id`, `clause_ref`, `page_from`, `page_to`, `confidence`, `model`, `extracted_at` |
+
+Migration `0013_occupancy_lease_facts.sql`. `ON DELETE RESTRICT` to all three parents, as
+everything else in this module is.
+
+### `tenancy_id` is on the row for the third time, and for the third time it is the same argument
+
+It is reachable through `document_id`. It is stored anyway, exactly as it is on the chunk row and
+on the embedding row: **every read of a tenant's facts filters by occupancy**, and a filter on a
+column of the table being read is one a query cannot be written without noticing. A filter that
+needs a join back to `occupancy_documents` is a join a later query can be written without, and
+that query answers one tenant with another tenant's lease.
+
+The value is copied from the document row at extraction time and is never taken from a caller,
+for the reason 12.1 gives: a document never moves between tenancies.
+
+### The five fields, and the two that rule 7 shapes
+
+| `field` | `value` |
+|---|---|
+| `term` | `{ initial: { from, to }, options: [{ from, to, noticeBy }], capYears }` |
+| `rent` | `{ baseAmount, currency, indexBaseMonth, rule }` |
+| `securities` | `[{ kind, statedAmount?, statedText }]` — deposit, bank guarantee, שטר חוב |
+| `notice` | `[{ event, days }]` — the window before each rollover, and on exit |
+| `deductibles` | `[{ subject, statedText }]` |
+
+**`term` cannot hold a single end date**, and that is the point. The lease is an initial period
+plus two options capped at ten years overall (`docs/reference/lease-template-donadom.md`), and
+`occupancy_tenancies.ends_on` is deliberately "the end of the term currently in force" rather
+than the lease's ultimate expiry — see "What current means" above. The twin is where the whole
+structure lives, which is why one date range is enough there and is not enough here.
+
+**`rent` cannot hold a rent.** It holds the base figure the contract states, the index it is
+linked to, the base month it is measured from, and the re-basing rule in the lease's own words.
+SPEC.md rule 7 is not enforced here by a convention that nobody computes a charge — it is
+enforced by a stored shape with **nowhere to put one**. The same is true of `deductibles`, which
+carries the clause's stated text and never a figure this system derived.
+
+`statedAmount` on a security is the number the contract prints, kept as text with its currency,
+because a deposit written in the lease is a fact about the document rather than a sum this
+system is doing arithmetic on.
+
+### The vocabulary is expected to grow, so it is code and not a `CHECK`
+
+Every other closed vocabulary in this schema is a `CHECK` constraint — party roles, document
+kinds, staff roles. This one is not, and the exception is deliberate: the five fields above are
+the five week 3 needs, and more will be defined as the product finds out what it has to answer.
+A `CHECK` would make each new field a migration whose entire content is a second copy of a list
+the code already enforces, and the two copies would drift.
+
+`internal/twin.ts` holds the registry — the field name, the shape of its value, the clauses worth
+sending, and the schema the model is held to — and it is the module's single statement of what a
+lease field is. Adding a field is an entry there and a test, not a migration.
+
+### Which clauses are sent is decided by clause reference, never by similarity
+
+The chunks fed to the model are selected deterministically in `twin.ts`: by annex and clause
+number for the fields the annex holds, and by keyword over clause text for the ones the body
+holds. `searchClauses` is not used, and that is not an oversight — day 12 measured retrieval
+ranking as **not yet good enough** and carried it to 14.1 with a diagnosis. A twin built on a
+ranking that is known to be wrong would inherit the problem invisibly; a twin built on
+`נספח א׳ §5` by name is reading the clause the reference note says to read.
+
+**It is also a privacy decision, taken here rather than inherited.** The front page is the
+PII-densest text in the document — two names, two ID numbers, two phones, an email — and 12.2
+measured it as the chunk most likely to be retrieved for any vague question. It carries no clause
+number, and selection here requires one, so **the front page is never sent to the model at all**.
+That is a property of the selection rule and is asserted by a test, not a habit.
+
+### One call per field, not one per document
+
+Five calls, each carrying only the clauses that field could be in, each held to only that field's
+schema. The input stays about one question rather than being a lease pasted into a prompt, and the
+sixth field, when it is defined, is a registry entry rather than a longer prompt.
+
+**Every call must come back, though.** A pass replaces the document's facts wholesale, so a pass
+with a failed call is not a pass: the command throws and nothing is deleted, which leaves the
+previous extraction intact. That is 12.2's guarantee for a failed embedding, and it is here for
+the same reason — the alternative is a twin missing the one field whose call happened to fail,
+indistinguishable on screen from a lease that is silent about it.
+
+### A citation naming a clause that was not sent is rejected
+
+The model returns a `chunkId` with every field. It is checked against the exact set of chunks
+that call was given, and a field whose citation is not in that set is **dropped rather than
+stored**.
+
+This is the load-bearing rule of the slice. A wrong value with an honest citation is a
+correction 13.2 can make, and the operator reading it can see what the model saw. A value with an
+invented citation is worse than no value at all, because every screen downstream renders it as
+grounded — the same argument 12.1 makes for `clause_ref` being nullable: a chunk that invented a
+clause number would be a citation pointing at nothing.
+
+**A list's rows each carry their own citation.** `securities`, `notice` and `deductibles` are
+lists, and their rows come from different clauses — a list citing one clause for all of them would
+be a false citation for every row but one. So each row names its own chunk, checked by the same
+rule, and a row whose citation was not sent is dropped while the rest of the list stands. The
+field's own citation is the clause the field as a whole was read from.
+
+`confidence` is stored as **what the model said about itself**, and is named that way rather than
+`certainty` so nothing downstream mistakes it for a measurement of ours.
+
+### Idempotent by replacement, like chunks and unlike a document
+
+Facts are derived data with a natural key, `UNIQUE (document_id, field)`. Re-extracting is the
+same document read again, so `extractTwin` deletes that document's facts and re-inserts them in
+one transaction — 12.1's argument exactly, and the same guarantee: either the whole pass lands or
+none of it does.
+
+**What 13.2 has to know before it builds confirmation:** a confirmation is a human's statement
+about *a value*, so a re-extraction that produces a different value must not leave the old
+confirmation standing beside the new number. The columns that record who confirmed what are
+13.2's, and so is that rule; it is written here because this is the slice where the shape it
+constrains was decided.
+
+### Commands
+
+#### `extractTwin({ documentId }, actor) -> Extraction`
+
+```
+{ documentId, tenancyId, fields: number, attempted: number, model }
+```
+
+Unknown document -> `not_found`. A document with no chunks -> `invalid`: extraction reads clauses
+and there is nothing to read, which is a different fact from a lease that says nothing about its
+term. A model reply that is not the schema, or a call that fails -> `unavailable`, from the kernel
+adapter, before a single row is deleted.
+
+Audited, with the document as its subject. **No field values reach the audit row** — the row says
+a document was read and how many fields came out, which is what an operator needs and is not a
+third copy of a real contract's contents (12.1's rule, and `tasks/fuses.md` counts the places).
+
+#### `listLeaseFacts(documentId) -> LeaseFact[]`
+
+By field, in the registry's order. The verify read for this slice and the input to 13.2.
+Unaudited here, as this module's other reads are; `staff` audits its own use.
+
 ## Audited
 
 `openTenancy`, `addParty` and `endTenancy` are wrapped in the kernel's `audit.around`, so a
@@ -604,10 +753,11 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   nothing. Their callers audit their own use — as of 10.1 `staff` does exactly that, writing a
   row when an operator *opens* a unit and none when a list is rendered (`SPEC-staff.md`) — and
   a broader PII-read trail is a week-6 concern, the same position `identity` takes.
-- **A document is chunked, not yet retrievable.** Slice 11.2 stored and served it and 12.1
-  cut it into clauses; embeddings scoped by occupancy (12.2) and the extracted twin (13.1)
-  are the slices that make it answerable. `tenancyAccess` is still the value that will scope
-  the retrieval, and nothing reads a document or a chunk by anything but a staff session yet.
+- **Nothing outside `staff` reads a document, a chunk or a fact.** 11.2 stored the lease,
+  12.1 cut it into clauses, 12.2 made them findable and 13.1 turned the annex into fields —
+  and every one of those is reached today by a staff session and by nothing else.
+  `tenancyAccess` is still the value that will scope a tenant-facing read, and the agent that
+  does the reading is week 4.
 - **Ingestion is manual and synchronous.** An operator presses a button and the request waits
   on a 38-page extraction. Auto-ingest on attach wants the kernel's durable work (`work.ts`)
   so an upload is not held open by it, and that is its own slice.
@@ -616,8 +766,10 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
   the tender's scheme will chunk worse, and the honest place to find that out is a second
   real lease — which is why the reference note says to treat one sample's specifics as
   unconfirmed.
-- **No rent, no money, ever.** SPEC.md rule 7. The lease's rent is an index-linked formula
-  against a named base month, which is the week-3 twin's problem and never this module's.
+- **No rent, no money, ever.** SPEC.md rule 7. The twin (13.1) stores the *parts* of the
+  lease's rent formula — the base figure the contract prints, the index, the base month, the
+  re-basing rule in the lease's words — and has nowhere to put a figure this system computed.
+  Reading a charge out of them is not deferred work; it is work this module will never do.
 - **No "unconfirmed" party↔phone mapping.** The lease sample carries two tenants and two
   mobile numbers with nothing saying which is whose. An importer must be able to record that
   honestly rather than guess — guessing wrong inside a household is recoverable, guessing
@@ -626,5 +778,13 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
 - **`validDate` / `optionalDate` are on the contract as of slice 8.1.** The importer must
   reject `2026-02-30` before it writes rather than after, and a second copy of the rule in
   the importer would drift from the one these commands enforce. Behaviour unchanged.
+- **A tenancy with two documents has two twins, and nothing chooses between them.** Facts
+  are keyed by document, because a re-upload is a correction rather than a version (11.2) and
+  silently preferring one document's answer would be preferring the wrong one half the time.
+  Reconciling a tenancy-level view across documents belongs with the screen that confirms
+  fields (13.2), where a human is present to say which document is authoritative.
+- **Extraction is manual, synchronous and unreviewed.** An operator presses a button and waits
+  on five model calls; nothing triggers it on ingest, and until 13.2 every field is a claim
+  with no way to confirm or correct it. An extraction is a claim until a human confirms it.
 - **Nothing is removable.** No way to detach a party or delete a tenancy; corrections are a
   manual database task until an admin screen owns them.

@@ -5,6 +5,7 @@ import { buildApp } from '../../app.ts';
 import { createIdentity } from '../../identity/contract.ts';
 import { embeddingColumnDimensions } from '../../kernel/config.ts';
 import { createFakeEmbedder } from '../../kernel/embeddings.ts';
+import { createFakeExtractor } from '../../kernel/extraction.ts';
 import { newId } from '../../kernel/ids.ts';
 import { createMemoryStore } from '../../kernel/objects.ts';
 import { samplePdf } from '../../kernel/pdf-sample.ts';
@@ -579,6 +580,108 @@ describe('lease chunks at the edge', () => {
         headers: { cookie },
       });
       assert.equal(crossed.statusCode, 404);
+    });
+  });
+
+  // Slice 13.1 at the edge. What is asserted here is the route: the guard, the
+  // server-side pairing of unit and document, and where the browser lands. What
+  // the model is *sent* and what is believed of its reply is pinned in
+  // internal/twin.test.ts, whose fixtures are Hebrew -- this file's sample PDF
+  // is Latin, and clause selection is Hebrew domain vocabulary.
+  it('reads the twin from the chunks page, and refuses a viewer', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '13.1-test',
+        store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
+        extractor: createFakeExtractor(() => ({ found: false })),
+      });
+      const cookie = await loginAs(pool, app, 'admin');
+      const place = await seedPlace(pool);
+      await uploaded(app, cookie, place.unit.id);
+
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [place.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+      const chunks = `/admin/units/${place.unit.id}/documents/${documentId}/chunks`;
+      const extract = `/admin/units/${place.unit.id}/documents/${documentId}/extract`;
+      const form = {
+        cookie,
+        'content-type': 'application/x-www-form-urlencoded',
+      };
+
+      await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/ingest`,
+        headers: form,
+        payload: '',
+      });
+
+      const read = await app.inject({
+        method: 'POST',
+        url: extract,
+        headers: form,
+        payload: '',
+      });
+      // Back to the page where the fields and the clauses they cite are read
+      // against each other, rather than to the unit page the ingest returns to.
+      assert.equal(read.statusCode, 302);
+      assert.equal(read.headers.location, chunks);
+
+      const page = await app.inject({
+        method: 'GET',
+        url: chunks,
+        headers: { cookie },
+      });
+      assert.equal(page.statusCode, 200);
+      assert.ok(page.body.includes('שדות החוזה'));
+      // A field nothing was read for is absent, not blank.
+      assert.ok(page.body.includes('לא נקרא מהחוזה'));
+
+      // The same guard the ingest is behind: reading a lease into fields writes
+      // rows, so a viewer is refused and the refusal is on the record.
+      const viewer = await loginAs(pool, app, 'viewer');
+      const refused = await app.inject({
+        method: 'POST',
+        url: extract,
+        headers: {
+          cookie: viewer,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: '',
+      });
+      assert.equal(refused.statusCode, 302);
+      assert.match(String(refused.headers.location), /error=not_allowed/);
+      // Counted, not compared to one: this database persists between runs, so
+      // the assertion is that the refusal was recorded rather than that it is
+      // the only one ever recorded.
+      const refusals = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM audit_log
+          WHERE action = 'staff.extractTwin' AND outcome = 'error'
+            AND error_code = 'not_allowed'`,
+      );
+      assert.ok((refusals.rows[0]?.n ?? 0) > 0);
+      const viewerPage = await app.inject({
+        method: 'GET',
+        url: chunks,
+        headers: { cookie: viewer },
+      });
+      assert.ok(!viewerPage.body.includes('/extract'));
+
+      // A pair of ids in a URL is a caller-supplied claim until the server
+      // checks it belongs together -- the rule the ingest and the search
+      // already answer to.
+      const crossed = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.vacant.id}/documents/${documentId}/extract`,
+        headers: form,
+        payload: '',
+      });
+      assert.equal(crossed.statusCode, 302);
+      assert.match(String(crossed.headers.location), /error=not_found/);
     });
   });
 });

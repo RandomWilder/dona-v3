@@ -1,10 +1,14 @@
 import type { Person } from '../../identity/contract.ts';
 import { type Html, h } from '../../kernel/ui/html.ts';
 import type {
+  Confidence,
   DocumentKind,
   DocumentRecord,
+  LeaseFact,
+  LeaseField,
   OccupancyResolution,
 } from '../../occupancy/contract.ts';
+import { leaseFields } from '../../occupancy/contract.ts';
 import type {
   AssetKind,
   Building,
@@ -359,7 +363,7 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
   const body = detail.chunks.length
     ? h`<h2 class="list-heading">כל הסעיפים במסמך · ${ltr(String(detail.chunks.length))}</h2>
         ${detail.chunks.map(
-          (chunk) => h`<div class="card">
+          (chunk) => h`<div class="card" id="clause-${chunk.id}">
             <p class="muted">
               ${
                 chunk.clauseRef
@@ -386,10 +390,177 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
             <a href="/admin/documents/${detail.document.id}">המסמך המקורי</a>
           </p>
           ${readingNote(detail.document)}
+          ${twinCard(detail, context)}
           ${searchCard(detail)}
           ${errorNote(context)}
           ${body}
         </section>`;
+}
+
+const leaseFieldNames: Record<LeaseField, string> = {
+  term: 'תקופת השכירות',
+  rent: 'דמי השכירות',
+  securities: 'בטוחות',
+  notice: 'הודעה מוקדמת',
+  deductibles: 'חיובים והשתתפות',
+};
+
+const confidenceNames: Record<Confidence, string> = {
+  high: 'ודאות גבוהה',
+  medium: 'ודאות בינונית',
+  low: 'ודאות נמוכה',
+};
+
+// The lease's fields, each beside the clause it was read out of. A verification
+// surface with a harder job than the clause list below it: these values were
+// produced by a model, and the slice's bar is that each one can be read against
+// the document -- so the citation is not a footnote here, it is the thing being
+// checked, and it links to the clause card further down this page.
+//
+// A field that was not extracted is shown as *absent*, never as empty. "The
+// lease does not say" and "we did not manage to read it" are different facts,
+// and a blank renders both the same way.
+function twinCard(detail: DocumentChunks, context: PageContext): Html {
+  const found = new Map(detail.facts.map((fact) => [fact.field, fact]));
+  const read = detail.facts[0];
+  const extract =
+    permits(context.role, 'mutate') && detail.chunks.length > 0
+      ? h`<form method="post"
+              action="/admin/units/${detail.unit.unit.id}/documents/${detail.document.id}/extract"
+              class="inline">
+              <button type="submit" class="linkish">${
+                read ? 'קריאה מחדש של השדות' : 'קריאת שדות מהחוזה'
+              }</button>
+            </form>`
+      : h``;
+
+  const rows = h`<table class="rows">
+          <thead><tr><th>שדה</th><th>ערך</th><th>מקור</th><th>ודאות</th></tr></thead>
+          <tbody>${leaseFields.map((field) => {
+            const fact = found.get(field);
+            return h`<tr>
+              <td>${leaseFieldNames[field]}</td>
+              <td>${
+                fact
+                  ? fieldValue(fact)
+                  : h`<span class="muted">לא נקרא מהחוזה</span>`
+              }</td>
+              <td>${
+                fact
+                  ? h`<a href="#clause-${fact.chunkId}">${
+                      fact.clauseRef
+                        ? clauseTag(fact.clauseRef)
+                        : h`<span class="tag">ללא מספור</span>`
+                    }</a> · ${pageRange(fact.pageFrom, fact.pageTo)}`
+                  : h`<span class="muted">—</span>`
+              }</td>
+              <td>${fact ? confidenceNames[fact.confidence] : h`<span class="muted">—</span>`}</td>
+            </tr>`;
+          })}</tbody>
+        </table>`;
+
+  return h`<div class="card">
+          <h2>שדות החוזה</h2>
+          <p class="muted">
+            ${
+              read
+                ? h`נקראו ${date(read.extractedAt.slice(0, 10))} · ${ltr(read.model)} ·
+                    <strong>טרם אושרו</strong> — אישור ותיקון של כל שדה מגיעים בפרוסה הבאה.`
+                : h`השדות טרם נקראו מהחוזה.`
+            }
+            ${extract}
+          </p>
+          ${rows}
+        </div>`;
+}
+
+// Rendered per field, and with no arithmetic anywhere: SPEC.md rule 7 reaches
+// the presentation layer too, because a subtotal drawn on a page is a charge
+// however carefully it is labelled. Every figure here is the one the contract
+// prints.
+function fieldValue(fact: LeaseFact): Html {
+  if (fact.field === 'term') {
+    const term = fact.value as {
+      initial?: { from?: string | null; to?: string | null };
+      options?: Array<{
+        from?: string | null;
+        to?: string | null;
+        noticeBy?: string | null;
+        clauseRef?: string | null;
+      }>;
+      capYears?: number | null;
+      statedText?: string | null;
+    };
+    return h`<p>תקופה ראשונה: ${period(term.initial?.from, term.initial?.to)}</p>
+        ${(term.options ?? []).map(
+          (option, at) => h`<p class="muted">
+            אופציה ${ltr(String(at + 1))}: ${period(option.from, option.to)}
+            ${option.noticeBy ? h` · הודעה עד ${stated(option.noticeBy)}` : h``}
+            ${option.clauseRef ? h` · ${clauseTag(option.clauseRef)}` : h``}
+          </p>`,
+        )}
+        ${
+          term.capYears === null || term.capYears === undefined
+            ? h``
+            : h`<p class="muted">תקרה: ${ltr(String(term.capYears))} שנים</p>`
+        }
+        ${term.statedText ? h`<p class="clause">${term.statedText}</p>` : h``}`;
+  }
+
+  if (fact.field === 'rent') {
+    const rent = fact.value as {
+      baseAmount?: string | null;
+      currency?: string | null;
+      indexBaseMonth?: string | null;
+      rule?: string | null;
+    };
+    // A base figure, an index and a base month -- never "the rent today", which
+    // would be a number this system computed.
+    return h`<p>סכום בסיס: ${stated(rent.baseAmount)} ${rent.currency ? h`${rent.currency}` : h``}</p>
+        ${rent.indexBaseMonth ? h`<p class="muted">חודש בסיס: ${stated(rent.indexBaseMonth)}</p>` : h``}
+        ${rent.rule ? h`<p class="clause">${rent.rule}</p>` : h``}`;
+  }
+
+  const rows = (fact.value as { items?: Array<Record<string, unknown>> }).items;
+  if (!rows || rows.length === 0) {
+    return h`<span class="muted">—</span>`;
+  }
+  // Each row of a list is a different clause, so each carries its own citation
+  // rather than borrowing the field's.
+  return h`<ul class="stack">${rows.map((row) => {
+    const clause = typeof row.clauseRef === 'string' ? row.clauseRef : null;
+    const head = [row.kind, row.event, row.subject].find(
+      (value) => typeof value === 'string',
+    ) as string | undefined;
+    const amount =
+      typeof row.statedAmount === 'string' ? row.statedAmount : null;
+    const days = typeof row.days === 'number' ? row.days : null;
+    const text = typeof row.statedText === 'string' ? row.statedText : null;
+    return h`<li>
+        <strong>${head ?? '—'}</strong>
+        ${amount ? h` · ${stated(amount)}` : h``}
+        ${days === null ? h`` : h` · ${ltr(String(days))} ימים`}
+        ${clause ? h` · ${clauseTag(clause)}` : h``}
+        ${text ? h`<p class="clause">${text}</p>` : h``}
+      </li>`;
+  })}</ul>`;
+}
+
+// A date the contract states, shown as it was read rather than reformatted: the
+// annex writes some dates as words, and re-rendering one as a number would be
+// this screen restating a clause instead of quoting it.
+function stated(value: string | null | undefined): Html {
+  return value ? ltr(value) : h`<span class="muted">—</span>`;
+}
+
+function period(
+  from: string | null | undefined,
+  to: string | null | undefined,
+): Html {
+  if (!from && !to) {
+    return h`<span class="muted">—</span>`;
+  }
+  return h`${from ? h`מ־${stated(from)}` : h``} ${to ? h`עד ${stated(to)}` : h``}`;
 }
 
 // Ask this tenancy's lease a question. The thinnest surface that can prove the

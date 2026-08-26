@@ -108,6 +108,19 @@ refuses loudly is a config row with a constraint, which is what this one is. Cha
 dimension is a migration plus a re-embed, and the spec says so rather than letting someone
 discover it.
 
+### Two settings, read at two different times (slice 13.1)
+
+`embedding.model` is read **at boot**: it is welded to a `vector(n)` column and to every vector
+already stored, so changing it is a migration and a re-embed, and a revision may as well be part
+of that.
+
+`extraction.model` is read **per call**. It is welded to nothing — no stored row becomes
+unreadable when it changes — and the failure it guards against is different in kind: a model id
+the account cannot serve makes every extraction fail, and the fix has to be one row rather than a
+deploy. Cloud Run's `:latest` gotcha (`tasks/fuses.md`) is about *secrets* resolved at instance
+start; a settings row is read from Postgres when the call is made, so a corrected id takes effect
+on the next press of the button.
+
 ## Embeddings (`embeddings.ts`, slice 12.2)
 
 `embed(texts)` → one vector per text, order preserved. Infrastructure on the footing `objects.ts`
@@ -135,6 +148,36 @@ until someone asks a question and gets silence.
 **Which one is running is reported at boot**, beside the document store. A deployed revision
 running on a refusing embedder is wrong in exactly the way `docs: memory` is wrong, and it has to
 be sayable.
+
+## Extraction (`extraction.ts`, slice 13.1)
+
+`extract({ instructions, input, schema })` -> the JSON the schema describes. The second model
+port, and the first one with a **prompt**: 12.2's embedder had no instructions and no judgement,
+and this one has both. It still knows nothing about leases — it is handed instructions, text and
+a schema, and hands back parsed JSON, exactly as `pdf.ts` is handed bytes and hands back items.
+
+`createOpenAiExtractor({ apiKey })` calls the chat-completions endpoint over `fetch` with no SDK,
+with `response_format: { type: 'json_schema', strict: true }`. Strict, because the alternative is
+a caller parsing prose: a schema the provider enforces is the difference between a malformed
+reply being an error and being a field with a plausible wrong shape. A reply that is not the
+schema, or is not JSON at all, is `unavailable` — never a partial object.
+
+**The model id is not passed at construction, unlike the embedder's.** It arrives per call, read
+from `config_settings` by the caller. The reason is the difference between the two settings: the
+embedding model is welded to a column width and to every vector already stored, so changing it is
+a migration and a re-embed; the extraction model is welded to nothing, and a wrong or unavailable
+id must be correctable with one row rather than a deploy.
+
+`createUnconfiguredExtractor()` is the default when no key is configured and it **throws**, on
+the argument `createUnconfiguredEmbedder` and `createUnconfiguredStore` both make. An extractor
+that returned an empty object would write a lease with no fields and look like a lease that says
+nothing, which is the failure that stays invisible until someone trusts the twin.
+
+`createFakeExtractor(replies)` is what the tests use: scripted JSON, no network and no key. What
+the tests are about is what the caller does with a reply — a citation that names a clause nobody
+sent, a value of the wrong shape — and none of that needs a model to produce it.
+
+**Which one is running is reported at boot**, beside the store and the embedder.
 
 ## Idempotency (`idempotency.ts`)
 

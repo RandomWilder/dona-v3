@@ -16,6 +16,10 @@ import {
   type Embedder,
 } from '../../kernel/embeddings.ts';
 import { KernelError } from '../../kernel/errors.ts';
+import {
+  createUnconfiguredExtractor,
+  type Extractor,
+} from '../../kernel/extraction.ts';
 import { newId } from '../../kernel/ids.ts';
 import type { ObjectStore } from '../../kernel/objects.ts';
 import { createPdfjsText, type PdfText } from '../../kernel/pdf.ts';
@@ -34,8 +38,11 @@ import {
   createUnconfiguredStore,
   type DocumentRecord,
   type Documents,
+  type Extraction,
+  type ExtractTwinInput,
   type IngestDocumentInput,
   type Ingestion,
+  type LeaseFact,
   type SearchClausesInput,
 } from './documents.ts';
 import {
@@ -151,6 +158,11 @@ export interface Occupancy {
   // has no default — SPEC.md's isolation rule as a WHERE on the searched table.
   searchClauses(input: SearchClausesInput): Promise<ClauseHit[]>;
   countChunks(tenancyId: string): Promise<Record<string, number>>;
+  // Slice 13.1: the lease's fields, each pointing at the clause it came from.
+  // Its own command rather than a step of ingesting, and every field it stores
+  // carries a citation naming a clause that was actually sent to the model.
+  extractTwin(input: ExtractTwinInput, actor: Actor): Promise<Extraction>;
+  listLeaseFacts(documentId: string): Promise<LeaseFact[]>;
 }
 
 export interface OccupancyDeps {
@@ -173,6 +185,11 @@ export interface OccupancyDeps {
   // into vectors that match nothing, a failure invisible until a tenant asks a
   // question and gets silence.
   embedder?: Embedder;
+  // How clauses become fields. Absent, it is an extractor that throws rather
+  // than one that returns nothing: a twin with no fields and a twin nobody
+  // could read look identical on every screen, and the second is a lease the
+  // system has quietly decided says nothing.
+  extractor?: Extractor;
   settings?: Settings;
 }
 
@@ -207,6 +224,7 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     // so there is no such thing as a process that forgot to set it up.
     pdf: deps.pdf ?? createPdfjsText(),
     embedder: deps.embedder ?? createUnconfiguredEmbedder(),
+    extractor: deps.extractor ?? createUnconfiguredExtractor(),
     settings: deps.settings ?? createSettings(pool),
   });
 
@@ -488,6 +506,8 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     listChunks: (documentId) => documents.listChunks(documentId),
     searchClauses: (input) => documents.searchClauses(input),
     countChunks: (tenancyId) => documents.countChunks(tenancyId),
+    extractTwin: (input, actor) => documents.extractTwin(input, actor),
+    listLeaseFacts: (documentId) => documents.listLeaseFacts(documentId),
   };
 }
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Person } from '../../identity/contract.ts';
+import type { LeaseFact } from '../../occupancy/contract.ts';
 import type { Building } from '../../portfolio/contract.ts';
 import type { DocumentChunks, UnitDetail } from '../internal/queries.ts';
 import type { StaffRole } from '../internal/roles.ts';
@@ -225,6 +226,72 @@ describe('admin views', () => {
     assert.ok(page.includes('בכל העמודים נמצא טקסט'));
     assert.ok(page.includes('38'));
   });
+
+  it('shows an extracted field beside a link to the clause it cites', () => {
+    const detail = chunkDetail('נספח א׳ §5');
+    const page = chunksPage(
+      { ...detail, facts: [fact()] },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('תקופת השכירות'));
+    // The citation is the thing being checked, so it links to the clause card
+    // further down this page rather than sitting as a footnote.
+    assert.ok(page.includes('href="#clause-c1"'));
+    assert.ok(page.includes('id="clause-c1"'));
+    // An initial period and its options -- there is no single end date to show.
+    assert.ok(page.includes('תקופה ראשונה'));
+    assert.ok(page.includes('אופציה'));
+    assert.ok(page.includes('טרם אושרו'));
+  });
+
+  it('shows a field that was not extracted as absent, not as empty', () => {
+    // "The lease does not say" and "we did not manage to read it" are different
+    // facts, and a blank renders both the same way.
+    const page = chunksPage(
+      { ...chunkDetail('§1'), facts: [fact()] },
+      context('admin'),
+    ).value;
+    assert.ok(page.includes('לא נקרא מהחוזה'));
+  });
+
+  it('offers the extract button to a role that may write, and to no other', () => {
+    const detail = chunkDetail('§1');
+    const admin = chunksPage(detail, context('admin')).value;
+    const viewer = chunksPage(detail, context('viewer')).value;
+
+    assert.ok(admin.includes('/documents/d1/extract'));
+    // The same guard that refuses a viewer an ingest: reading a lease into
+    // fields writes rows.
+    assert.equal(viewer.includes('/documents/d1/extract'), false);
+  });
+
+  it('shows no figure the contract did not print', () => {
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §10'),
+        facts: [
+          fact({
+            field: 'rent',
+            value: {
+              baseAmount: '4,250',
+              currency: 'ש"ח',
+              indexBaseMonth: 'ינואר 2026',
+              rule: 'עדכון שנתי לפי המדד',
+            },
+          }),
+        ],
+      },
+      context('admin'),
+    ).value;
+
+    // The base figure as printed, the index and the base month -- and nothing
+    // that looks like "the rent today", which would be a charge computed on a
+    // page (SPEC.md rule 7).
+    assert.ok(page.includes('4,250'));
+    assert.ok(page.includes('חודש בסיס'));
+    assert.equal(page.includes('סה"כ'), false);
+  });
 });
 
 // One document's chunks, for the chunks page.
@@ -262,5 +329,30 @@ function chunkDetail(clauseRef: string): DocumentChunks {
       },
     ],
     search: null,
+    facts: [],
+  };
+}
+
+// One extracted field, for the twin card.
+function fact(over: Partial<LeaseFact> = {}): LeaseFact {
+  return {
+    id: 'f1',
+    documentId: 'd1',
+    tenancyId: 't1',
+    field: 'term',
+    value: {
+      initial: { from: '2026-01-01', to: '2027-12-31' },
+      options: [{ from: '2028-01-01', to: '2029-12-31', noticeBy: null }],
+      capYears: 10,
+      statedText: null,
+    },
+    chunkId: 'c1',
+    clauseRef: 'נספח א׳ §5',
+    pageFrom: 15,
+    pageTo: 15,
+    confidence: 'high',
+    model: 'gpt-5',
+    extractedAt: '2026-08-26T10:00:00.000Z',
+    ...over,
   };
 }
