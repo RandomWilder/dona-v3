@@ -282,4 +282,94 @@ describe('clause chunking', () => {
     assert.deepEqual(imageOnlyPages, []);
     assert.equal(chunks[0]?.clauseRef, '§12');
   });
+  it('does not turn a wrapped sentence into a clause of its own', () => {
+    // Measured on the real lease. Reading every leading number as a clause
+    // invented `§18` out of a cross-reference that wrapped -- a three-word
+    // fragment competing for rank against real clauses -- and, by the same
+    // mechanism, `נספח י״ב §43` out of the parcel numbers "חלקה 43 ו-46",
+    // citing a land registry entry as a contractual term.
+    const { chunks } = chunkLease([
+      page(2, [
+        line(
+          60,
+          '2.5. ידוע לשוכר שהמתחם הוקם במסגרת מכרז, ועל כן יחולו הוראות סעיף',
+        ),
+        line(80, '18 להלן.'),
+        line(
+          120,
+          '2.6. זכות השוכר תתמצה בזכות חוזית בלבד, והוא מתחייב שלא לרשום אותה.',
+        ),
+        filler(160),
+      ]),
+    ]);
+    const refs = chunks.map((chunk) => chunk.clauseRef);
+    assert.ok(!refs.includes('§18'));
+    // And it is not lost either -- it belongs to the sentence it continues.
+    assert.match(chunks[0]?.text ?? '', /18 להלן/);
+  });
+
+  it('still reads a real clause that carries no separator after its number', () => {
+    // The other half of the rule, and why the test above is not simply "require
+    // a full stop after the number": נספח י״א numbers its clauses `2.2.4` with
+    // no separator at all, and they are real. Only a bare number *and* a
+    // previous line still mid-sentence is conclusive.
+    const { chunks } = chunkLease([
+      page(35, [
+        line(60, '2.2.3 מסירת דירה לשוכר חדש נעשית לאחר בדיקה.'),
+        line(
+          90,
+          '2.2.4 מסירת דירה בעת החלפת שוכר מתבצעת בתיאום מראש עם הדיירים.',
+        ),
+        filler(130),
+      ]),
+    ]);
+    assert.ok(chunks.some((chunk) => chunk.clauseRef?.includes('2.2.4')));
+  });
+
+  it('folds a bare heading into the clause it heads', () => {
+    // `§6` alone is the line "6. מטרת השכירות וייחודה" and nothing else. On the
+    // real lease it came seventh for a question about rent, purely on a shared
+    // word -- retrieval that can return a heading is retrieval that can answer a
+    // question with a table of contents.
+    const { chunks } = chunkLease([
+      page(4, [
+        line(60, '6. מטרת השכירות וייחודה'),
+        line(
+          90,
+          '6.1. מטרת השכירות הינה למגורים בלבד ולא לכל מטרה אחרת שהיא כלל.',
+        ),
+        line(120, '7. שירותי האחזקה ותקנון המתחם'),
+        line(
+          150,
+          '7.1. השוכר מצהיר ומאשר בזאת כי ידוע לו שהוא שוכר דירה במתחם מגורים.',
+        ),
+      ]),
+    ]);
+    const refs = chunks.map((chunk) => chunk.clauseRef);
+    assert.ok(!refs.includes('§6'));
+    assert.ok(!refs.includes('§7'));
+    // The citation points at the text; the heading is kept beside it, so a
+    // caller can show the context without citing it.
+    const first = chunks.find((chunk) => chunk.clauseRef === '§6.1');
+    assert.equal(first?.heading, '6. מטרת השכירות וייחודה');
+    assert.match(first?.text ?? '', /למגורים בלבד/);
+  });
+
+  it('does not fold a heading across an annex boundary', () => {
+    const { chunks } = chunkLease([
+      page(14, [
+        line(60, 'נספח א׳ — פרטי העסקה'),
+        line(
+          90,
+          'סעיף 5 – תקופת השכירות מתחילה ביום 15/08/2025 ומסתיימת בתום התקופה.',
+        ),
+        filler(130),
+      ]),
+    ]);
+    // The annex heading is its own chunk: it is not a parent of `§5` in the
+    // numbering sense, and merging them would cite the annex's preamble as the
+    // clause about the term.
+    assert.equal(chunks[0]?.clauseRef, 'נספח א׳');
+    assert.equal(chunks[1]?.clauseRef, 'נספח א׳ §5');
+  });
 });
