@@ -221,6 +221,15 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 - [ ] A corrected field records who corrected it — an extraction is a claim until a human confirms it
 - [ ] **Cut line (ROADMAP):** this screen may be rough
 
+> **What this slice inherits, rather than starts from nothing.** Three findings are already
+> waiting for it: the securities read one obligation as two, `חיובים והשתתפות` returns the
+> payer where the registry asked for the subject, and — from ADR-0002 — a page carrying
+> handwriting may need routing to a human rather than trusted. The first two are what a
+> reviewer would correct on the real lease today; the third is a shape this screen may have to
+> grow. `SPEC-occupancy.md` already states the rule this slice must honour: a confirmation is
+> a statement about *a value*, so a re-extraction producing a different one must not leave the
+> old confirmation standing beside the new number.
+
 **Done when:** one real lease's fields are reviewed and confirmed on staging.
 **Verify:** the confirmed record, read back. · Size: M
 

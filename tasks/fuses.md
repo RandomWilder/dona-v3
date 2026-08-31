@@ -112,7 +112,7 @@ four.
 - **2026-08-24:** still not received, two days on. Slice 8.1's importer was built anyway, against a seeded fixture, per `ROADMAP.md:175`'s contingency — so the table now has somewhere to land the day it arrives. What is still owed is unchanged, and 8.1 cannot be closed without it: five spot-checks against the source document are its third acceptance bar. **Next check: 2026-08-25.** If it slips further, the mapping table alone (not the lease PDFs) is the piece that unblocks day 8 — worth asking for it separately rather than waiting for the whole set.
 - Requested: lease PDFs · tenant↔unit↔phone table · vendor list · deductible rules · fault Q&A doc
 
-## 4. GCP + OpenAI + domain
+## 5. GCP + OpenAI + domain
 - Fired: 2026-08-21
 - Status: **partial**
 - Done: GCP project created (`dona-v3`, project number 149055978002) ✓ · billing linked & enabled (acct `017AD7-9B4A59-12DDB4`) ✓ · monthly budget ₪500 with 50/90/100% + forecast alerts, verified via API 2026-08-22 ✓ · OpenAI paid API key ✓
