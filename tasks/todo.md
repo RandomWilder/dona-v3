@@ -216,22 +216,61 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 [#28](https://github.com/RandomWilder/dona-v3/pull/28); staging serves `1370e89`. Evidence:
 `tasks/evidence/day-13-twin.md`.
 
-### Slice 13.2 — Admin review screen ☐
-- [ ] Confirm/correct each extracted field, on top of 10.1's views and through the guarded surface
-- [ ] A corrected field records who corrected it — an extraction is a claim until a human confirms it
-- [ ] **Cut line (ROADMAP):** this screen may be rough
+### Slice 13.2 — Admin review screen ☑
+- [x] Confirm/correct each extracted field, on top of 10.1's views and through the guarded surface
+- [x] A corrected field records who corrected it — an extraction is a claim until a human confirms it
+- [x] **A review is not derived data, so it is not a column on the fact.** `extractTwin`
+      deletes a document's facts and re-inserts them on every re-read; a confirmation stored
+      there would be erased by someone pressing "read again", with nothing on screen to show it
+      had existed. Its own table, keyed `(document_id, field)`, with **no foreign key to the
+      fact or the chunk** — a `RESTRICT` would let a review block a re-extraction and a
+      `CASCADE` would let one erase it
+- [x] **`reviewed_value` is how 13.1's rule is kept without deleting anything.** `stands` is a
+      `jsonb` comparison against the document's current fact: a re-read that says the same thing
+      leaves the confirmation standing, one that says something else leaves the review in place
+      and reported as superseded. Deleting it would have satisfied the rule too, and thrown away
+      the only record that the value used to be different
+- [x] **A correction posts changes and never a value** — leaf edits and dropped rows, applied by
+      occupancy to the fact it reads itself, then put back through the same
+      `leaseFieldSpec(field).parse` the model's reply passed. `chunkId` and `clauseRef` are
+      printed and are not inputs, so a human is held to exactly the citation rule the model is.
+      It works because `parse` now accepts its own output, asserted per field
+- [x] **The confirm form carries the fact id as a version token**, so a re-read between the page
+      rendering and the press is a `conflict` rather than a name attached to a value nobody saw
+- [x] ~~**Cut line (ROADMAP):** this screen may be rough~~ — taken, and named in `SPEC-staff.md`:
+      the correction form is a generated list of inputs rather than a designed one, a leaf the
+      extraction left null cannot be filled in, and there is nowhere to say *why* a value was
+      corrected
+- [x] **The screen was missing the thing the table exists for**, found by using it rather than by
+      reading it: a superseded review named its reviewer and its day and withheld its value, so a
+      corrected figure was readable in Postgres and nowhere on the page. Fixed in a second PR
+      ([#32](https://github.com/RandomWilder/dona-v3/pull/32))
 
-> **What this slice inherits, rather than starts from nothing.** Three findings are already
-> waiting for it: the securities read one obligation as two, `חיובים והשתתפות` returns the
-> payer where the registry asked for the subject, and — from ADR-0002 — a page carrying
-> handwriting may need routing to a human rather than trusted. The first two are what a
-> reviewer would correct on the real lease today; the third is a shape this screen may have to
-> grow. `SPEC-occupancy.md` already states the rule this slice must honour: a confirmation is
-> a statement about *a value*, so a re-extraction producing a different one must not leave the
-> old confirmation standing beside the new number.
+> **What this slice inherited, and what became of it.** Three findings were waiting: the
+> securities read one obligation as two — **corrected on the real lease, closed**;
+> `חיובים והשתתפות` returns the payer where the registry asked for the subject — **still true,
+> and now confirmed that way**, because the mismatch is in the vocabulary rather than the
+> reading and stays week 5's `catalog`; and — from ADR-0002 — a page carrying handwriting may
+> need routing to a human, which this screen did not grow and which waits on the OCR spike at
+> 15.1.
 
 **Done when:** one real lease's fields are reviewed and confirmed on staging.
 **Verify:** the confirmed record, read back. · Size: M
+**Closed 2026-08-31 — the bar, met and evidenced.** Read back out of staging's database rather
+than off the screen that wrote it: `facts=5 · reviews=5 · standing=5`, every one naming
+`asaf@dona.co.il` and the minute it was made, and nine audit rows carrying
+`{documentId, field, decision}` and **no values**. Two of the five are corrections: `בטוחות`
+dropped from three rows to two, closing day 13's carried finding on the real contract, and
+`דמי השכירות` with one key changed while its citation held. The rule the slice existed to honour
+was then exercised by accident and better than by design — one re-read moved four of five fields
+and stood the fifth, and a later pass moved three of them *back*, at which point `rent`'s
+correction from 12:10 stood again with nobody touching it. Merged as
+[#31](https://github.com/RandomWilder/dona-v3/pull/31) and
+[#32](https://github.com/RandomWilder/dona-v3/pull/32); staging serves `39473f5`. Evidence:
+`tasks/evidence/day-13-review.md`.
+
+**Day 13 closed 2026-08-31 — both slices.** The lease states its own terms, and a person has
+signed off on which of them are true.
 
 ## Day 14 (Thu) — Retrieval that refuses
 
@@ -259,6 +298,11 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
       in the document — two names, two ID numbers, two phones, an email — and is currently the
       most likely text retrieved for any vague question. Week 4's agent feeds top hits into a
       prompt, so those hits reach the model. Decide it here deliberately rather than inherit it
+- [ ] **Two problems now, not one — the second arrived on 2026-08-31 and is measured.** The
+      extractor **oscillates** between answers across passes of the same document (see the carry
+      list). Ranking and stability are different failures with one shared instrument: the golden
+      set. A case that extracts twice and diffs belongs beside the two ranking cases, and the
+      `extraction.reasoning_effort` row is the first knob to try **after** it exists, not before
 - [ ] **`נספח א׳`'s two-column layout is half solved** (12.1). `§5` interleaves the label column
       with the value column: the dates survive and are readable, the sentence is braided. It is
       the annex the twin reads, so a second pass belongs near this work
@@ -290,6 +334,36 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
 
+## Carried in from day 13 (second pass)
+
+- **The extractor oscillates, and this is now measured rather than suspected.** Four passes ran
+  over the same document on 2026-08-31 — same model, same deterministically-selected clauses,
+  `extraction.reasoning_effort` = `none` — and the answer went **A → B → A**. Not a drift in one
+  direction: a swing between at least two answers, in row counts (`deductibles` 7 → 11 → 7), in
+  prose (`rent`'s re-basing rule, while the base figure held), and in **which clause a field is
+  read from** (`notice`, `§5.3` p3 ↔ `§5.4–5.5` p3–4). It is cheap to gate: an eval that
+  extracts twice and diffs would have caught it, which makes it **14.2's**, beside the two
+  ranking cases. The first knob to try is the effort row, and trying it without the eval in
+  place first is the thing not to do.
+- **A confirmed value is not a stable value while that is true.** 13.2's `stands` rule is doing
+  its job — four reviews went superseded in one press and three came back standing on a later
+  pass, with `rent`'s correction reattaching untouched — but an office that re-reads a lease
+  will re-confirm a lot for no change in the contract. The fix is the oscillation above, not the
+  comparison: narrowing `stands` on one observation is PIPELINE.md §9's named anti-pattern, and
+  the case that makes it tempting (prose drift invalidating a correction to a figure) is exactly
+  the case an eval should settle.
+- **`דמי השכירות` was wrong again, and is the first golden case for 14.2.** One key,
+  `baseAmount`, corrected by a human against `נספח א׳ §10` — the failure
+  `docs/reference/lease-template-donadom.md` names for that clause, arriving a second time.
+- **A review has no history.** One row per field, the later decision replacing the earlier, so
+  confirming a field that was previously corrected discards the record of the correction — and
+  `audit_log` cannot supply it, because it deliberately holds no values. Nothing depends on that
+  record today; the honest place to want one is the slice that has to explain a value to a
+  tenant.
+- **A reviewer may edit and may drop, and may not add.** Neither a new row nor a leaf the
+  extraction left null: both state something the model did not, so both need a citation the
+  screen has no way to choose. Stated in `SPEC-occupancy.md` rather than implied.
+
 ## Carried in from day 13
 
 - **A second real lease was measured, and it does not resemble the first.** 5 pages against
@@ -315,14 +389,21 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
   document has nothing to hang off. Every tenancy in this system so far arrived by importer or
   by seed, including the one this second lease needed. Fine for data that lands by CSV at
   sign-off, not fine for an office running day to day. Belongs with week 5's admin work.
-- **The securities read one obligation as two.** The annex offers a cash deposit *or* a bank
-  guarantee, and the twin lists both with the same stated amount — a reader adding them sees
-  twice the security the lease requires. 13.2's review screen is exactly the place a human
-  fixes it, and it is a golden case for 14.2. Deliberately **not** patched into the prompt:
-  changing a prompt on one bad output with no eval run is PIPELINE.md §9's named anti-pattern.
-- **`חיובים והשתתפות` names the payer, not the subject.** The registry asks what the charge is
-  about; the model returned who bears it. Vocabulary week 5's `catalog` has to settle rather
-  than inherit.
+- ~~**The securities read one obligation as two.**~~ — **closed 2026-08-31 on the real lease.**
+  The annex offers a cash deposit *or* a bank guarantee and the twin listed both, so a reader
+  adding them saw twice the security the contract requires. The reviewer dropped the row in
+  13.2's screen: three rows to two, both survivors still citing `נספח א׳ §12`. It was
+  **confirmed as correct first and corrected half an hour later**, which is worth keeping — a
+  review screen can manufacture the error it exists to catch, and what stops that is a person
+  reading the document rather than the screen. Still **not** patched into the prompt, and still
+  a golden case for 14.2: changing a prompt on one bad output with no eval run is
+  PIPELINE.md §9's named anti-pattern.
+- **`חיובים והשתתפות` names the payer, not the subject** — still true, and **now confirmed that
+  way** (13.2). The registry asks what the charge is about; the model returned who bears it, the
+  reviewer read the rows against the contract and accepted them. The mismatch is in the
+  vocabulary rather than in the reading, so it stays week 5's `catalog` to settle — and it is
+  worth stating plainly what it proves about the screen: a green tick means *a person read this
+  against the contract*, never *the schema was the right shape for it*.
 - **189s then 8.3s is unexplained.** No single call exceeded the 60s bound, so five concurrent
   calls summing to ~190s were serialized outside this system — provider-side queueing is the
   likely reading, and prompt caching the likely reason the repeat was fast. Week 4 puts a
