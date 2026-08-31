@@ -56,6 +56,13 @@ environment.
 **Removal is owed at phase-1 sign-off** — from `gs://dona-v3-staging-docs` and
 `gs://dona-v3-prod-docs` both. This line exists so it cannot drift past that.
 
+**Two contracts now, as of 2026-08-26.** A second real lease was uploaded to staging to
+measure whether the pipeline generalises (it does not — `ADR-0002`). It is a scan, so it
+produced no clauses and no fields: it lives in the staging bucket and in one
+`occupancy_documents` row, and nowhere else. The removal owed at sign-off is **both
+documents**, and the count is worth keeping accurate — a deletion path that removes "the real
+lease" removes one of two.
+
 **And from Postgres, as of slice 12.1.** The contract is no longer only in the buckets: the
 `occupancy_documents` row indexes it, and `occupancy_document_chunks` now holds **its clause
 text**, extracted from the PDF and stored verbatim. Deleting the objects would leave the lease

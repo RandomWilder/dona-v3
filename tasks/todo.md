@@ -283,6 +283,20 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 
 ## Carried in from day 13
 
+- **A second real lease was measured, and it does not resemble the first.** 5 pages against
+  38, **every one of them image-only**, yielding 0 clauses and 0 twin fields. The pipeline
+  behaved correctly — `minPageChars` found no readable text, so it chunked nothing rather than
+  chunking noise, and recorded `page_count 5 · image_only_pages [1,2,3,4,5]`. Two findings, not
+  one: **OCR is now required** ([ADR-0002](../docs/decisions/ADR-0002-ocr-is-required.md), cut
+  line withdrawn, slice placed at 15.1 with a spike first) — **and OCR is not sufficient**. A
+  five-page lease is almost certainly not the tender scheme, so it has no `נספח א׳`, and
+  `clauses.ts`'s numbering and `twin.ts`'s annex-first selection are tuned to a scheme it does
+  not follow. That is its own slice and its own risk row.
+- **The admin cannot open a tenancy.** Buildings, units, people and phones have forms; a
+  tenancy and its parties do not — so a flat created in the browser has no tenancy, and a
+  document has nothing to hang off. Every tenancy in this system so far arrived by importer or
+  by seed, including the one this second lease needed. Fine for data that lands by CSV at
+  sign-off, not fine for an office running day to day. Belongs with week 5's admin work.
 - **The securities read one obligation as two.** The annex offers a cash deposit *or* a bank
   guarantee, and the twin lists both with the same stated amount — a reader adding them sees
   twice the security the lease requires. 13.2's review screen is exactly the place a human
