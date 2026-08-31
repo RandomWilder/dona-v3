@@ -221,6 +221,15 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 - [ ] A corrected field records who corrected it — an extraction is a claim until a human confirms it
 - [ ] **Cut line (ROADMAP):** this screen may be rough
 
+> **What this slice inherits, rather than starts from nothing.** Three findings are already
+> waiting for it: the securities read one obligation as two, `חיובים והשתתפות` returns the
+> payer where the registry asked for the subject, and — from ADR-0002 — a page carrying
+> handwriting may need routing to a human rather than trusted. The first two are what a
+> reviewer would correct on the real lease today; the third is a shape this screen may have to
+> grow. `SPEC-occupancy.md` already states the rule this slice must honour: a confirmation is
+> a statement about *a value*, so a re-extraction producing a different one must not leave the
+> old confirmation standing beside the new number.
+
 **Done when:** one real lease's fields are reviewed and confirmed on staging.
 **Verify:** the confirmed record, read back. · Size: M
 
@@ -283,6 +292,29 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
 
 ## Carried in from day 13
 
+- **A second real lease was measured, and it does not resemble the first.** 5 pages against
+  38, **every one of them image-only**, yielding 0 clauses and 0 twin fields. The pipeline
+  behaved correctly — `minPageChars` found no readable text, so it chunked nothing rather than
+  chunking noise, and recorded `page_count 5 · image_only_pages [1,2,3,4,5]`. Two findings, not
+  one: **OCR is now required** ([ADR-0002](../docs/decisions/ADR-0002-ocr-is-required.md), cut
+  line withdrawn, slice placed at 15.1 with a spike first) — **and OCR is not sufficient**. A
+  five-page lease is almost certainly not the tender scheme, so it has no `נספח א׳`, and
+  `clauses.ts`'s numbering and `twin.ts`'s annex-first selection are tuned to a scheme it does
+  not follow. That is its own slice and its own risk row. The framing for it — **schema over
+  templates**, build what a tenancy must know and let the model find it anywhere — is written
+  into ADR-0002 and becomes **its own ADR after the spike**, because the trade it turns on
+  (does a citation survive as `עמוד 3` when `נספח א׳ §5` cannot be recovered?) cannot be
+  settled before seeing OCR'd text.
+- **The scan carries handwriting, and that is the spike's real bar.** Not "is the printed
+  Hebrew readable" but **"does the output reveal what was changed by hand"** — a hand-struck
+  figure that OCR reads as printed returns the superseded term cleanly, with nothing to
+  indicate it is wrong. If the answer is no, detecting handwriting on a page and routing it to
+  a human is the honest product answer, and 13.2's review screen is where that lands.
+- **The admin cannot open a tenancy.** Buildings, units, people and phones have forms; a
+  tenancy and its parties do not — so a flat created in the browser has no tenancy, and a
+  document has nothing to hang off. Every tenancy in this system so far arrived by importer or
+  by seed, including the one this second lease needed. Fine for data that lands by CSV at
+  sign-off, not fine for an office running day to day. Belongs with week 5's admin work.
 - **The securities read one obligation as two.** The annex offers a cash deposit *or* a bank
   guarantee, and the twin lists both with the same stated amount — a reader adding them sees
   twice the security the lease requires. 13.2's review screen is exactly the place a human

@@ -290,7 +290,11 @@ database write could raise is a memory-exhaustion lever rather than a policy. Ch
 either costs a deploy and leaves a diff.
 
 `application/pdf` alone because slice 12.1 extracts text from a PDF and nothing else. A
-scan arrives as a PDF too; OCR is the week-3 cut line, logged as manual entry.
+scan arrives as a PDF too, and a scan is what the second real lease turned out to be — five
+pages, all five image-only, zero clauses. OCR was week 3's cut line with manual entry as the
+fallback; **that was withdrawn 2026-08-31** and OCR is required
+(`docs/decisions/ADR-0002-ocr-is-required.md`). Until the slice lands, a scanned lease is
+accepted, stored, and honestly reported as unreadable.
 
 ### Commands
 
@@ -449,9 +453,11 @@ warns that a complete lease is not one file — two annexes say their content wa
 separately, and the handover protocol was blank — so ingestion must "expect an incomplete
 document and say so, rather than treating absence as 'no guarantee exists'".
 
-OCR for those pages is week 3's stated cut line (`ROADMAP.md`), logged as a manual-entry
-fallback. What ingestion must not do is return a lease that is quietly four pages shorter than
-the lease.
+OCR for those pages **was** week 3's stated cut line with a manual-entry fallback, and is now a
+requirement (`docs/decisions/ADR-0002-ocr-is-required.md`): a second real lease measured five
+pages, every one image-only, so a document this reader cannot read is not the exception the cut
+line assumed. What ingestion must not do, either way, is return a lease that is quietly four
+pages shorter than the lease.
 
 **Returning the fact is not enough, and the first cut of 12.1 proved it.** `ingestDocument`
 computed the missing pages, handed them back, and the browser redirect dropped them on the

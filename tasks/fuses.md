@@ -56,6 +56,13 @@ environment.
 **Removal is owed at phase-1 sign-off** — from `gs://dona-v3-staging-docs` and
 `gs://dona-v3-prod-docs` both. This line exists so it cannot drift past that.
 
+**Two contracts now, as of 2026-08-26.** A second real lease was uploaded to staging to
+measure whether the pipeline generalises (it does not — `ADR-0002`). It is a scan, so it
+produced no clauses and no fields: it lives in the staging bucket and in one
+`occupancy_documents` row, and nowhere else. The removal owed at sign-off is **both
+documents**, and the count is worth keeping accurate — a deletion path that removes "the real
+lease" removes one of two.
+
 **And from Postgres, as of slice 12.1.** The contract is no longer only in the buckets: the
 `occupancy_documents` row indexes it, and `occupancy_document_chunks` now holds **its clause
 text**, extracted from the PDF and stored verbatim. Deleting the objects would leave the lease
@@ -105,7 +112,7 @@ four.
 - **2026-08-24:** still not received, two days on. Slice 8.1's importer was built anyway, against a seeded fixture, per `ROADMAP.md:175`'s contingency — so the table now has somewhere to land the day it arrives. What is still owed is unchanged, and 8.1 cannot be closed without it: five spot-checks against the source document are its third acceptance bar. **Next check: 2026-08-25.** If it slips further, the mapping table alone (not the lease PDFs) is the piece that unblocks day 8 — worth asking for it separately rather than waiting for the whole set.
 - Requested: lease PDFs · tenant↔unit↔phone table · vendor list · deductible rules · fault Q&A doc
 
-## 4. GCP + OpenAI + domain
+## 5. GCP + OpenAI + domain
 - Fired: 2026-08-21
 - Status: **partial**
 - Done: GCP project created (`dona-v3`, project number 149055978002) ✓ · billing linked & enabled (acct `017AD7-9B4A59-12DDB4`) ✓ · monthly budget ₪500 with 50/90/100% + forecast alerts, verified via API 2026-08-22 ✓ · OpenAI paid API key ✓
