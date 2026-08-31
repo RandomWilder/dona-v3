@@ -331,6 +331,49 @@ describe('admin views', () => {
     assert.ok(page.includes('לפני התיקון'));
   });
 
+  it('keeps the superseded value readable, since it is the only record of it', () => {
+    // The whole argument for keeping a superseded review rather than deleting it
+    // is that it is the evidence the value used to be different. Staging
+    // measured one re-read invalidating four reviews at once, one of them a
+    // correction to a figure -- which was then recoverable from the database and
+    // from nowhere on the screen.
+    const corrected = { ...fact().value, capYears: 7 };
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §5'),
+        facts: [fact()],
+        reviews: [
+          review({ decision: 'corrected', value: corrected, stands: false }),
+        ],
+        reviewers: {},
+      },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('אינה עדכנית'));
+    assert.ok(page.includes('הערך שתוקן קודם'));
+    // The value a person wrote, still on the page -- and the value the document
+    // gives now beside it.
+    assert.ok(page.includes('7'));
+    assert.ok(page.includes('10'));
+  });
+
+  it('keeps a review readable when the field is no longer extracted at all', () => {
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §5'),
+        facts: [],
+        reviews: [review({ stands: false })],
+        reviewers: {},
+      },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('לא נקרא מהחוזה'));
+    assert.ok(page.includes('השדה אינו נקרא מהחוזה עוד'));
+    assert.ok(page.includes('הערך שאושר קודם'));
+  });
+
   it('does not show a confirmation beside a value nobody confirmed', () => {
     // The load-bearing case of the slice. A re-extraction changed the value, so
     // occupancy reports the review as no longer standing: the field goes back

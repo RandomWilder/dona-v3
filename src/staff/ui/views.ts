@@ -505,7 +505,8 @@ function fieldBlock(
         ${
           review
             ? h`<p class="muted">${reviewNote(detail, review)} — <strong>אינו עדכני:</strong>
-                השדה אינו נקרא מהחוזה עוד.</p>`
+                השדה אינו נקרא מהחוזה עוד.</p>
+              ${supersededValue(field, review)}`
             : h``
         }
       </li>`;
@@ -542,12 +543,7 @@ function fieldBlock(
             </details>`
           : h``
       }
-      ${
-        review && !stands
-          ? h`<p class="muted"><strong>ביקורת קודמת, שאינה עדכנית:</strong>
-              ${reviewNote(detail, review)}. הערך נקרא מחדש מאז והשתנה.</p>`
-          : h``
-      }
+      ${review && !stands ? supersededNote(detail, field, review) : h``}
       ${mayWrite ? reviewForms(detail, field, fact, stands) : h``}
     </li>`;
 }
@@ -558,6 +554,40 @@ function fieldBlock(
 function reviewNote(detail: DocumentChunks, review: LeaseFieldReview): Html {
   const who = detail.reviewers[review.reviewedById] ?? review.reviewedById;
   return h`${who} · ${date(review.reviewedAt.slice(0, 10))}`;
+}
+
+// A review the extraction has moved out from under. It says who and when, and
+// -- since the value it was a statement about is the only record that the field
+// used to say something else -- it says *what*, under a disclosure.
+//
+// That is not decoration. Keeping a superseded review instead of deleting it is
+// only worth anything if the thing it preserves can be read: staging measured a
+// re-read invalidating four confirmations at once, one of them a correction to a
+// figure, and until this the operator's own corrected value was recoverable from
+// the database and from nowhere on the screen.
+function supersededNote(
+  detail: DocumentChunks,
+  field: LeaseField,
+  review: LeaseFieldReview,
+): Html {
+  return h`<p class="muted"><strong>ביקורת קודמת, שאינה עדכנית:</strong>
+      ${reviewNote(detail, review)}. הערך נקרא מחדש מאז והשתנה.</p>
+    ${supersededValue(field, review)}`;
+}
+
+// Closed by default: what is on the screen is what the document says now, and
+// this is the record of what a person said about it before. `corrected` and
+// `confirmed` are named apart because they are different claims -- one is a
+// value a human wrote, the other a value they agreed with.
+function supersededValue(field: LeaseField, review: LeaseFieldReview): Html {
+  return h`<details>
+      <summary class="muted">${
+        review.decision === 'corrected'
+          ? 'הערך שתוקן קודם, ואינו בתוקף'
+          : 'הערך שאושר קודם, ואינו בתוקף'
+      }</summary>
+      ${fieldValue(field, review.value)}
+    </details>`;
 }
 
 // The two decisions. Confirming posts nothing about the value: the command

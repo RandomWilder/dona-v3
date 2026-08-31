@@ -352,7 +352,7 @@ Per field, top to bottom of the same table 13.1 built:
 | nothing extracted | `לא נקרא מהחוזה`, and no decision to make |
 | extracted, unreviewed | the value, its citation, and both buttons |
 | reviewed, standing | the value of record, who decided it and when, and `אושר` or `תוקן` |
-| reviewed, superseded | the value the extraction now gives, the review named as *out of date*, and both buttons again |
+| reviewed, superseded | the value the extraction now gives, the review named as *out of date* with what it said under a disclosure, and both buttons again |
 
 The fourth row is the one worth building a table for. A confirmation is a statement about a
 value, so when a re-extraction changes that value the confirmation does not travel with it —
@@ -360,6 +360,16 @@ occupancy reports `stands: false` and this screen says the field was reviewed, s
 was reviewed as, and asks again. A screen that instead showed a green tick beside a number
 nobody had ever seen is precisely the failure the whole citation apparatus exists to prevent,
 arriving at the last step.
+
+**And it shows the superseded value, not only its date.** The reason occupancy keeps a
+superseded review rather than deleting it is that the review is the only record the field ever
+said something else; a screen that named the reviewer and the day and withheld the value would
+make that reason untrue in practice. Staging measured the cost of getting this wrong before it
+was fixed: one press of *קריאה מחדש של השדות* moved four of five fields, and the operator's own
+corrected figure was then readable in Postgres and nowhere on the page. It sits under a
+`<details>`, closed — what is on the screen is what the document says **now** — and it names
+`תוקן` and `אושר` apart, because a value a person wrote and a value they agreed with are
+different claims.
 
 ### The correction form edits values and cannot touch a citation
 
