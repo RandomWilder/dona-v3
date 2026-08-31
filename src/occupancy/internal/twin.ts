@@ -1,3 +1,4 @@
+import { KernelError } from '../../kernel/errors.ts';
 import type { ExtractionRequest, JsonSchema } from '../../kernel/extraction.ts';
 
 // The digital twin's vocabulary and its judgement, pure: no clock, no pool, no
@@ -26,6 +27,46 @@ export type LeaseField = (typeof leaseFields)[number];
 // for a measurement of ours.
 export const confidences = ['high', 'medium', 'low'] as const;
 export type Confidence = (typeof confidences)[number];
+
+// Slice 13.2. The two things a human can say about an extracted field. A CHECK
+// constraint in the schema, unlike the field names above -- that list is stated
+// to be growing and this one is not: a value is either the one the reader stands
+// behind or the one they replaced.
+export const reviewDecisions = ['confirmed', 'corrected'] as const;
+export type ReviewDecision = (typeof reviewDecisions)[number];
+
+// Validation at the edge, here rather than in the kernel for the reason 7.1 drew
+// that line: the kernel holds the shape of a value and never a domain word. Both
+// of these arrive from a URL and a form, so neither is trusted for the length of
+// a function call.
+export function validLeaseField(value: unknown, field = 'field'): LeaseField {
+  if (
+    typeof value !== 'string' ||
+    !(leaseFields as readonly string[]).includes(value)
+  ) {
+    throw new KernelError(
+      'invalid',
+      `${field} must be one of ${leaseFields.join(', ')}`,
+    );
+  }
+  return value as LeaseField;
+}
+
+export function validReviewDecision(
+  value: unknown,
+  field = 'decision',
+): ReviewDecision {
+  if (
+    typeof value !== 'string' ||
+    !(reviewDecisions as readonly string[]).includes(value)
+  ) {
+    throw new KernelError(
+      'invalid',
+      `${field} must be one of ${reviewDecisions.join(', ')}`,
+    );
+  }
+  return value as ReviewDecision;
+}
 
 // A chunk, as this file needs it. Structurally what `ChunkRecord` is, declared
 // here rather than imported so the pure half does not depend on the half that
@@ -179,9 +220,13 @@ const specs: LeaseFieldSpec[] = [
       if (!raw) {
         return null;
       }
+      // The model writes `initialFrom`; this stores `initial.from`. Reading both
+      // is what makes this function accept its own output -- see `rowsOf` below
+      // for the argument, which is 13.2's and not a tidying.
+      const stored = items([raw.initial])[0];
       const initial = {
-        from: statedText(raw.initialFrom),
-        to: statedText(raw.initialTo),
+        from: statedText(raw.initialFrom ?? stored?.from),
+        to: statedText(raw.initialTo ?? stored?.to),
       };
       const options = items(raw.options)
         .map((option) =>
@@ -312,12 +357,23 @@ const specs: LeaseFieldSpec[] = [
   },
 ];
 
+// A list field arrives from the model as a bare array and is stored as
+// `{ items: [...] }`. Reading both is the second half of making `parse`
+// idempotent, which is what slice 13.2 rests on: a human's correction is applied
+// to the *stored* value and then goes back through this same parser, so the
+// citation rule that governs the model's answer governs theirs too. A second
+// parser for the stored shape would be a second copy of every rule here, and the
+// copy that drifts is the one that stops dropping an uncited row.
+function rowsOf(value: unknown): unknown {
+  return Array.isArray(value) ? value : items([value])[0]?.items;
+}
+
 function listValue(
   value: unknown,
   sent: Map<string, ClauseSource>,
   build: (item: Record<string, unknown>) => Record<string, unknown> | null,
 ): Record<string, unknown> | null {
-  const rows = items(value)
+  const rows = items(rowsOf(value))
     .map((item) => citedItem(item, sent, build))
     .filter((item): item is Record<string, unknown> => item !== null);
   return rows.length > 0 ? { items: rows } : null;

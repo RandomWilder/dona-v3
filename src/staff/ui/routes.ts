@@ -135,6 +135,30 @@ function kindOf(fields: unknown): DocumentKind {
   return value.length > 0 ? (value as DocumentKind) : 'lease';
 }
 
+// The correction form, out of a posted body. The prefix is doing real work:
+// this app's urlencoded parser is `Object.fromEntries(new URLSearchParams(…))`
+// (`app.ts`), which keeps only the *last* of a repeated name — so a column of
+// checkboxes all called `drop` would silently drop one row and leave the others,
+// which is the worst possible failure for a form whose job is removing a row
+// that should not be there. One name per input makes the collapse impossible.
+function correction(body: Record<string, unknown>): {
+  edits: Record<string, string>;
+  drops: string[];
+} {
+  const edits: Record<string, string> = {};
+  const drops: string[] = [];
+  for (const [name, value] of Object.entries(body)) {
+    if (name.startsWith('edit.') && typeof value === 'string') {
+      edits[name.slice('edit.'.length)] = value;
+    } else if (name.startsWith('drop.')) {
+      // A checkbox posts only when it is ticked, so its presence is the answer
+      // and its value is whatever the browser felt like sending.
+      drops.push(name.slice('drop.'.length));
+    }
+  }
+  return { edits, drops };
+}
+
 function credentials(body: unknown): Credentials | null {
   if (typeof body !== 'object' || body === null) {
     return null;
@@ -497,6 +521,30 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     }
   });
 
+  // A pair of ids in a URL is a caller-supplied claim until this turns it into a
+  // fact. 11.2 resolves the tenancy from the unit rather than accepting one from
+  // the browser; this is that rule read from the other direction, and it is the
+  // same check for every write that names a document — one place, so a fifth
+  // route cannot be the one that forgets.
+  async function requireDocumentOfUnit(
+    unitId: string,
+    documentId: string,
+  ): Promise<void> {
+    const tenancy = await occupancy.findCurrentTenancy(unitId);
+    const documents = tenancy
+      ? await occupancy.listDocuments(tenancy.tenancy.id)
+      : [];
+    if (!documents.some((document) => document.id === documentId)) {
+      throw new KernelError('not_found', 'document not found');
+    }
+  }
+
+  // Back to the chunks page, which is where a document's clauses, its fields and
+  // the reviews of those fields are read against each other.
+  function backToChunks(request: FastifyRequest): string {
+    return `/admin/units/${encodeURIComponent(param(request, 'unitId'))}/documents/${encodeURIComponent(param(request, 'documentId'))}/chunks`;
+  }
+
   // Reading a stored lease into clauses. A button and not a step of the upload:
   // the lease this system reads was in the bucket before ingestion existed, and
   // a 38-page extraction inside the upload request would hold the browser open
@@ -505,18 +553,8 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     '/admin/units/:unitId/documents/:documentId/ingest',
     (request) => `/admin/units/${encodeURIComponent(param(request, 'unitId'))}`,
     async (_body, session, request) => {
-      const unitId = param(request, 'unitId');
       const documentId = param(request, 'documentId');
-      // The document has to be this unit's, checked on the server. 11.2 resolves
-      // the tenancy from the unit rather than accepting one from the browser;
-      // this is the same rule where the browser supplies both ids.
-      const tenancy = await occupancy.findCurrentTenancy(unitId);
-      const documents = tenancy
-        ? await occupancy.listDocuments(tenancy.tenancy.id)
-        : [];
-      if (!documents.some((document) => document.id === documentId)) {
-        throw new KernelError('not_found', 'document not found');
-      }
+      await requireDocumentOfUnit(param(request, 'unitId'), documentId);
       await commands.ingestDocument({ documentId }, session);
     },
   );
@@ -524,25 +562,61 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
   // Reading a document's clauses into the twin's fields. Its own button and its
   // own command, for the reason ingestion is: this is a judgement a human
   // reviews, not a step of storing a file (SPEC-staff.md, "Reading the lease's
-  // fields"). It lands back on the chunks page, because that is where the
-  // fields and the clauses they cite are read against each other.
+  // fields").
   create(
     '/admin/units/:unitId/documents/:documentId/extract',
-    (request) =>
-      `/admin/units/${encodeURIComponent(param(request, 'unitId'))}/documents/${encodeURIComponent(param(request, 'documentId'))}/chunks`,
+    backToChunks,
     async (_body, session, request) => {
-      const unitId = param(request, 'unitId');
       const documentId = param(request, 'documentId');
-      // The same server-side check the ingest and the search make: a pair of
-      // ids in a URL is a caller-supplied claim until this turns it into a fact.
-      const tenancy = await occupancy.findCurrentTenancy(unitId);
-      const documents = tenancy
-        ? await occupancy.listDocuments(tenancy.tenancy.id)
-        : [];
-      if (!documents.some((document) => document.id === documentId)) {
-        throw new KernelError('not_found', 'document not found');
-      }
+      await requireDocumentOfUnit(param(request, 'unitId'), documentId);
       await commands.extractTwin({ documentId }, session);
+    },
+  );
+
+  // Confirming a field: the operator says the extraction read it right. Nothing
+  // about the value is posted — the command copies it off the fact it reads
+  // itself. The one thing the form carries is the id of the extraction being
+  // looked at, so a re-read between the render and the press is a `conflict`
+  // rather than a name attached to a value nobody saw.
+  create(
+    '/admin/units/:unitId/documents/:documentId/fields/:field/confirm',
+    backToChunks,
+    async (body, session, request) => {
+      const documentId = param(request, 'documentId');
+      await requireDocumentOfUnit(param(request, 'unitId'), documentId);
+      await commands.reviewLeaseField(
+        {
+          documentId,
+          // Checked against occupancy's registry rather than trusted from the
+          // URL, like every other value that arrives in a path.
+          field: param(request, 'field'),
+          factId: asString(body.factId),
+          decision: 'confirmed',
+        },
+        session,
+      );
+    },
+  );
+
+  // Correcting one. The form posts changes and never a value: `edit.<path>` for
+  // a scalar the contract states and `drop.<row>` for a row that does not
+  // belong, both applied by occupancy to the value it reads.
+  create(
+    '/admin/units/:unitId/documents/:documentId/fields/:field/correct',
+    backToChunks,
+    async (body, session, request) => {
+      const documentId = param(request, 'documentId');
+      await requireDocumentOfUnit(param(request, 'unitId'), documentId);
+      await commands.reviewLeaseField(
+        {
+          documentId,
+          field: param(request, 'field'),
+          factId: asString(body.factId),
+          decision: 'corrected',
+          ...correction(body),
+        },
+        session,
+      );
     },
   );
 

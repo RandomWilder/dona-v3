@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Person } from '../../identity/contract.ts';
-import type { LeaseFact } from '../../occupancy/contract.ts';
+import type { LeaseFact, LeaseFieldReview } from '../../occupancy/contract.ts';
 import type { Building } from '../../portfolio/contract.ts';
 import type { DocumentChunks, UnitDetail } from '../internal/queries.ts';
 import type { StaffRole } from '../internal/roles.ts';
@@ -242,7 +242,7 @@ describe('admin views', () => {
     // An initial period and its options -- there is no single end date to show.
     assert.ok(page.includes('תקופה ראשונה'));
     assert.ok(page.includes('אופציה'));
-    assert.ok(page.includes('טרם אושרו'));
+    assert.ok(page.includes('טרם אושר'));
   });
 
   it('shows a field that was not extracted as absent, not as empty', () => {
@@ -292,6 +292,125 @@ describe('admin views', () => {
     assert.ok(page.includes('חודש בסיס'));
     assert.equal(page.includes('סה"כ'), false);
   });
+
+  it('names who confirmed a field, and by their address where it has one', () => {
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §5'),
+        facts: [fact()],
+        reviews: [review()],
+        reviewers: { 'op-1': 'dana@donadom.co.il' },
+      },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('אושר'));
+    assert.ok(page.includes('dana@donadom.co.il'));
+    assert.equal(page.includes('טרם אושר'), false);
+  });
+
+  it('shows a corrected value as the value, and keeps what was read beneath it', () => {
+    const corrected = {
+      ...fact().value,
+      capYears: 12,
+    };
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §5'),
+        facts: [fact()],
+        reviews: [review({ decision: 'corrected', value: corrected })],
+        reviewers: {},
+      },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('תוקן'));
+    assert.ok(page.includes('12'));
+    // What the model read is still on the page, under a disclosure: a
+    // correction is only checkable beside the thing it corrected.
+    assert.ok(page.includes('לפני התיקון'));
+  });
+
+  it('does not show a confirmation beside a value nobody confirmed', () => {
+    // The load-bearing case of the slice. A re-extraction changed the value, so
+    // occupancy reports the review as no longer standing: the field goes back
+    // to needing a look, and the old review is named as out of date rather than
+    // deleted.
+    const page = chunksPage(
+      {
+        ...chunkDetail('נספח א׳ §5'),
+        facts: [fact()],
+        reviews: [review({ stands: false })],
+        reviewers: {},
+      },
+      context('admin'),
+    ).value;
+
+    assert.ok(page.includes('טרם אושר'));
+    assert.ok(page.includes('אינה עדכנית'));
+  });
+
+  it('offers the review forms to a role that may write, and to no other', () => {
+    const detail = { ...chunkDetail('נספח א׳ §5'), facts: [fact()] };
+    const admin = chunksPage(detail, context('admin')).value;
+    const viewer = chunksPage(detail, context('viewer')).value;
+
+    assert.ok(admin.includes('/fields/term/confirm'));
+    assert.ok(admin.includes('/fields/term/correct'));
+    assert.equal(viewer.includes('/fields/term/confirm'), false);
+    assert.equal(viewer.includes('/fields/term/correct'), false);
+  });
+
+  it('lets a reviewer edit a value and drop a row, and never a citation', () => {
+    const detail = {
+      ...chunkDetail('נספח א׳ §5'),
+      facts: [
+        fact({
+          field: 'securities',
+          value: {
+            items: [
+              {
+                kind: 'פיקדון',
+                statedAmount: '10,000',
+                statedText: 'הפקדה במזומן',
+                chunkId: 'c1',
+                clauseRef: 'נספח א׳ §8',
+              },
+              {
+                kind: 'ערבות בנקאית',
+                statedAmount: '10,000',
+                statedText: 'ערבות אוטונומית',
+                chunkId: 'c1',
+                clauseRef: 'נספח א׳ §8',
+              },
+            ],
+          },
+        }),
+      ],
+    };
+    const page = chunksPage(detail, context('admin')).value;
+
+    // One input per value the contract states, and the checkbox that removes
+    // the row -- which is the correction the real lease needs first: the annex
+    // offers a deposit *or* a guarantee, and the twin read it as both.
+    assert.ok(page.includes('name="edit.items.0.statedAmount"'));
+    assert.ok(page.includes('name="edit.items.1.kind"'));
+    assert.ok(page.includes('name="drop.items.1"'));
+    // The citation is printed and is never an input: a text box over it would
+    // let a person do by hand what the extractor refuses to let the model do.
+    assert.equal(page.includes('name="edit.items.0.chunkId"'), false);
+    assert.equal(page.includes('name="edit.items.0.clauseRef"'), false);
+  });
+
+  it('carries the extraction it is a statement about into both forms', () => {
+    const page = chunksPage(
+      { ...chunkDetail('נספח א׳ §5'), facts: [fact()] },
+      context('admin'),
+    ).value;
+    // A re-read between this page rendering and the press must be a refusal
+    // rather than a name attached to a value nobody saw.
+    assert.ok(page.includes('name="factId" value="f1"'));
+  });
 });
 
 // One document's chunks, for the chunks page.
@@ -330,6 +449,27 @@ function chunkDetail(clauseRef: string): DocumentChunks {
     ],
     search: null,
     facts: [],
+    reviews: [],
+    reviewers: {},
+  };
+}
+
+// One review of a field, for the twin card. `stands` defaults to true: the
+// interesting cases are written out, and the ordinary one is not.
+function review(over: Partial<LeaseFieldReview> = {}): LeaseFieldReview {
+  return {
+    id: 'r1',
+    documentId: 'd1',
+    tenancyId: 't1',
+    field: 'term',
+    decision: 'confirmed',
+    value: fact().value,
+    reviewedValue: fact().value,
+    reviewedByKind: 'staff',
+    reviewedById: 'op-1',
+    reviewedAt: '2026-08-31T10:00:00.000Z',
+    stands: true,
+    ...over,
   };
 }
 

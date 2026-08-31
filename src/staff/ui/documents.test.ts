@@ -684,4 +684,203 @@ describe('lease chunks at the edge', () => {
       assert.match(String(crossed.headers.location), /error=not_found/);
     });
   });
+
+  // Slice 13.2 at the edge: the two decisions, the guard on them, and the form
+  // parsing that turns a page of inputs into edits and drops.
+  //
+  // The fact this reviews is *placed* rather than extracted, and that is a
+  // property of the fixture rather than a shortcut. `samplePdf` writes Latin
+  // text on purpose (pdf-sample.ts: Hebrew would need an embedded font and a
+  // CMap), and which clauses a field is read from is Hebrew domain vocabulary --
+  // so no extraction this file can run produces a field to review. What the
+  // command does with a review is pinned in occupancy's contract tests; what is
+  // asserted here is the route.
+  it('confirms and corrects a field from the chunks page, and refuses a viewer', async (t) => {
+    await withPool(t, async (pool) => {
+      const app = buildApp({
+        pool,
+        version: '13.2-test',
+        store: createMemoryStore(),
+        embedder: createFakeEmbedder(embeddingColumnDimensions),
+        extractor: createFakeExtractor(() => ({ found: false })),
+      });
+      const cookie = await loginAs(pool, app, 'admin');
+      const place = await seedPlace(pool);
+      await uploaded(app, cookie, place.unit.id);
+
+      const row = await pool.query<{ id: string }>(
+        'SELECT id FROM occupancy_documents WHERE tenancy_id = $1',
+        [place.tenancy.id],
+      );
+      const documentId = row.rows[0]?.id as string;
+      const chunks = `/admin/units/${place.unit.id}/documents/${documentId}/chunks`;
+      const form = {
+        cookie,
+        'content-type': 'application/x-www-form-urlencoded',
+      };
+
+      await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/ingest`,
+        headers: form,
+        payload: '',
+      });
+
+      const clause = await pool.query<{ id: string; clause_ref: string }>(
+        `SELECT id, clause_ref FROM occupancy_document_chunks
+          WHERE document_id = $1 ORDER BY ordinal LIMIT 1`,
+        [documentId],
+      );
+      const chunkId = clause.rows[0]?.id as string;
+      const factId = newId();
+      await pool.query(
+        `INSERT INTO occupancy_lease_facts
+           (id, document_id, tenancy_id, field, value, chunk_id, clause_ref,
+            page_from, page_to, confidence, model, extracted_at)
+         VALUES ($1, $2, $3, 'securities', $4, $5, $6, 1, 1, 'high', 'test',
+                 now())`,
+        [
+          factId,
+          documentId,
+          place.tenancy.id,
+          JSON.stringify({
+            items: [
+              {
+                kind: 'deposit',
+                statedAmount: '10,000',
+                statedText: 'cash deposit',
+                chunkId,
+                clauseRef: clause.rows[0]?.clause_ref ?? null,
+              },
+              {
+                kind: 'bank guarantee',
+                statedAmount: '10,000',
+                statedText: 'autonomous guarantee',
+                chunkId,
+                clauseRef: clause.rows[0]?.clause_ref ?? null,
+              },
+            ],
+          }),
+          chunkId,
+          clause.rows[0]?.clause_ref ?? null,
+        ],
+      );
+
+      const fields = `/admin/units/${place.unit.id}/documents/${documentId}/fields/securities`;
+
+      // The page offers both decisions, and carries the extraction they are
+      // statements about.
+      const before = await app.inject({
+        method: 'GET',
+        url: chunks,
+        headers: { cookie },
+      });
+      assert.ok(before.body.includes(`${fields}/confirm`));
+      assert.ok(before.body.includes(`name="factId" value="${factId}"`));
+      assert.ok(before.body.includes('name="drop.items.1"'));
+
+      // The correction: one row removed, one value retyped. The form posts
+      // changes, never a value.
+      const corrected = await app.inject({
+        method: 'POST',
+        url: `${fields}/correct`,
+        headers: form,
+        payload: new URLSearchParams({
+          factId,
+          'drop.items.1': '1',
+          'edit.items.0.statedAmount': '12,000',
+        }).toString(),
+      });
+      assert.equal(corrected.statusCode, 302);
+      assert.equal(corrected.headers.location, chunks);
+
+      const stored = await pool.query<{
+        decision: string;
+        value: { items: Array<Record<string, unknown>> };
+      }>(
+        `SELECT decision, value FROM occupancy_lease_field_reviews
+          WHERE document_id = $1 AND field = 'securities'`,
+        [documentId],
+      );
+      assert.equal(stored.rows[0]?.decision, 'corrected');
+      assert.equal(stored.rows[0]?.value.items.length, 1);
+      assert.equal(stored.rows[0]?.value.items[0]?.statedAmount, '12,000');
+
+      // Confirming carries no value at all: the command copies it off the fact
+      // it reads itself.
+      const confirmed = await app.inject({
+        method: 'POST',
+        url: `${fields}/confirm`,
+        headers: form,
+        payload: new URLSearchParams({ factId }).toString(),
+      });
+      assert.equal(confirmed.statusCode, 302);
+      assert.equal(confirmed.headers.location, chunks);
+      const after = await pool.query<{ decision: string }>(
+        `SELECT decision FROM occupancy_lease_field_reviews
+          WHERE document_id = $1 AND field = 'securities'`,
+        [documentId],
+      );
+      // One review per field, however often it is reviewed.
+      assert.equal(after.rows.length, 1);
+      assert.equal(after.rows[0]?.decision, 'confirmed');
+
+      // A stale extraction id is a refusal rather than a name attached to a
+      // value nobody saw.
+      const stale = await app.inject({
+        method: 'POST',
+        url: `${fields}/confirm`,
+        headers: form,
+        payload: new URLSearchParams({ factId: newId() }).toString(),
+      });
+      assert.equal(stale.statusCode, 302);
+      assert.match(String(stale.headers.location), /error=conflict/);
+
+      // A field name in a URL is checked against occupancy's registry, not
+      // trusted.
+      const invented = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.unit.id}/documents/${documentId}/fields/the-colour-of-the-door/confirm`,
+        headers: form,
+        payload: new URLSearchParams({ factId }).toString(),
+      });
+      assert.match(String(invented.headers.location), /error=invalid/);
+
+      // The same guard the ingest and the extract are behind: a review writes
+      // rows, so a viewer is refused and the refusal is on the record.
+      const viewer = await loginAs(pool, app, 'viewer');
+      const refused = await app.inject({
+        method: 'POST',
+        url: `${fields}/confirm`,
+        headers: {
+          cookie: viewer,
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: new URLSearchParams({ factId }).toString(),
+      });
+      assert.equal(refused.statusCode, 302);
+      assert.match(String(refused.headers.location), /error=not_allowed/);
+      const refusals = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM audit_log
+          WHERE action = 'staff.reviewLeaseField' AND outcome = 'error'
+            AND error_code = 'not_allowed'`,
+      );
+      assert.ok((refusals.rows[0]?.n ?? 0) > 0);
+      const viewerPage = await app.inject({
+        method: 'GET',
+        url: chunks,
+        headers: { cookie: viewer },
+      });
+      assert.ok(!viewerPage.body.includes('/confirm'));
+
+      // And the pairing of unit and document is checked here too.
+      const crossed = await app.inject({
+        method: 'POST',
+        url: `/admin/units/${place.vacant.id}/documents/${documentId}/fields/securities/confirm`,
+        headers: form,
+        payload: new URLSearchParams({ factId }).toString(),
+      });
+      assert.match(String(crossed.headers.location), /error=not_found/);
+    });
+  });
 });

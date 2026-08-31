@@ -326,11 +326,65 @@ base figure with its index and base month, never as one number. The screen has n
 it at all — SPEC.md rule 7 reaches the presentation layer as well, because a subtotal drawn on a
 page is a charge computed however carefully it is labelled.
 
-### Confirming and correcting is 13.2, and the screen says so
+## Confirming and correcting a field (slice 13.2)
 
-Nothing here can be edited yet. An extraction is a claim until a human confirms it, and the
-surface that records who confirmed what is the next slice; until it exists the page states that
-these fields are unreviewed rather than presenting them as settled.
+The same card, now with a decision on every row. Two more POSTs, in the same shape as the
+three before them:
+
+```
+POST /admin/units/:unitId/documents/:documentId/fields/:field/confirm
+POST /admin/units/:unitId/documents/:documentId/fields/:field/correct
+```
+
+**No new access rule, for the fifth time.** Both are `mutate` — they write rows, so a viewer
+is refused by the guard that refuses them an ingest and an extract — and the reviews render
+inside `getDocumentChunks`, already `read` and already audited on the same event as the
+clauses. The unit-and-document pair is checked server-side exactly as it is for the other
+three, and the field name is checked against occupancy's registry rather than trusted from
+the URL.
+
+### Four states, and the screen never renders two of them the same
+
+Per field, top to bottom of the same table 13.1 built:
+
+| State | What the row says |
+|---|---|
+| nothing extracted | `לא נקרא מהחוזה`, and no decision to make |
+| extracted, unreviewed | the value, its citation, and both buttons |
+| reviewed, standing | the value of record, who decided it and when, and `אושר` or `תוקן` |
+| reviewed, superseded | the value the extraction now gives, the review named as *out of date*, and both buttons again |
+
+The fourth row is the one worth building a table for. A confirmation is a statement about a
+value, so when a re-extraction changes that value the confirmation does not travel with it —
+occupancy reports `stands: false` and this screen says the field was reviewed, says what it
+was reviewed as, and asks again. A screen that instead showed a green tick beside a number
+nobody had ever seen is precisely the failure the whole citation apparatus exists to prevent,
+arriving at the last step.
+
+### The correction form edits values and cannot touch a citation
+
+A correction is not a text box holding a value. The form is generated from the stated value:
+one input per leaf the contract states — a base figure, an index month, a row's subject, a
+count of days — and one *"this row does not belong"* checkbox per row of a list. Both of the
+corrections the real lease needs are that shape: the securities read one obligation as two, so
+a row is dropped; `חיובים והשתתפות` returned the payer where the registry asked for the
+subject, so a subject is retyped.
+
+`chunkId` and `clauseRef` appear on every row and are **not inputs**. The citation is what
+makes the value checkable, and a text box over it would let a human do by hand exactly what
+13.1 refuses to let the model do. The server rebuilds the value from the fact it reads itself
+and passes it through occupancy's own parser, so this form posts changes and never a value.
+
+The form lives inside a `<details>` per field. Five open forms under five values is a wall,
+and the shell still runs without JavaScript — a `<details>` is the browser's own disclosure
+and needs none.
+
+### Rough, and the cut line says so
+
+ROADMAP week 3's cut line permits this screen to be rough, and it is: the correction form is
+a generated list of inputs rather than a designed one, a field the extraction left null cannot
+be filled in, and there is nowhere to say *why* a value was corrected. What is not rough is
+what gets recorded — who, what value, which extraction it was a statement about.
 
 ## The views (slice 10.1)
 
@@ -431,5 +485,7 @@ never did.
   suspenders and stays deferred to week 6 alongside login CSRF, above.
 - **No edit and no delete.** Every view is list-and-create. Correcting a misspelled building is
   still a manual database task — `portfolio` and `identity` both say so, and 10.1 does not
-  change it.
+  change it. 13.2 is the one exception and is deliberately narrow: a *lease field* can be
+  corrected, because a value a model produced is a claim and the office has to be able to
+  answer it. Nothing a human typed in has grown an edit path.
 - **No search, no pagination, no sorting controls.** The pilot is one building.

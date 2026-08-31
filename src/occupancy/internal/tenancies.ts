@@ -43,6 +43,8 @@ import {
   type IngestDocumentInput,
   type Ingestion,
   type LeaseFact,
+  type LeaseFieldReview,
+  type ReviewLeaseFieldInput,
   type SearchClausesInput,
 } from './documents.ts';
 import {
@@ -163,6 +165,14 @@ export interface Occupancy {
   // carries a citation naming a clause that was actually sent to the model.
   extractTwin(input: ExtractTwinInput, actor: Actor): Promise<Extraction>;
   listLeaseFacts(documentId: string): Promise<LeaseFact[]>;
+  // Slice 13.2: what a human said about one of those fields. The only row this
+  // module stores that a machine did not produce, and the only one a re-read of
+  // the document does not replace.
+  reviewLeaseField(
+    input: ReviewLeaseFieldInput,
+    actor: Actor,
+  ): Promise<LeaseFieldReview>;
+  listFieldReviews(documentId: string): Promise<LeaseFieldReview[]>;
 }
 
 export interface OccupancyDeps {
@@ -508,6 +518,9 @@ export function createOccupancy(deps: OccupancyDeps): Occupancy {
     countChunks: (tenancyId) => documents.countChunks(tenancyId),
     extractTwin: (input, actor) => documents.extractTwin(input, actor),
     listLeaseFacts: (documentId) => documents.listLeaseFacts(documentId),
+    reviewLeaseField: (input, actor) =>
+      documents.reviewLeaseField(input, actor),
+    listFieldReviews: (documentId) => documents.listFieldReviews(documentId),
   };
 }
 

@@ -61,6 +61,12 @@ export const truncatedTables = [
   // same reason: its ON DELETE RESTRICT to the chunk would otherwise make a
   // reset impossible without a CASCADE this list refuses to use.
   'occupancy_lease_facts',
+  // Slice 13.2. A human's confirmations and corrections -- and a correction is
+  // the contract's own words retyped, so this is a fourth place a real lease
+  // lives (tasks/fuses.md counts them). It empties with the document it reviews:
+  // a review of a field of a document that is gone is not a record of anything,
+  // and leaving it would make the next re-seed's first extraction look reviewed.
+  'occupancy_lease_field_reviews',
   'idempotency_keys',
 ] as const;
 

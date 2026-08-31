@@ -4,11 +4,13 @@ import type {
   Confidence,
   DocumentKind,
   DocumentRecord,
+  EditableGroup,
   LeaseFact,
   LeaseField,
+  LeaseFieldReview,
   OccupancyResolution,
 } from '../../occupancy/contract.ts';
-import { leaseFields } from '../../occupancy/contract.ts';
+import { editableGroups, leaseFields } from '../../occupancy/contract.ts';
 import type {
   AssetKind,
   Building,
@@ -411,20 +413,27 @@ const confidenceNames: Record<Confidence, string> = {
   low: 'ודאות נמוכה',
 };
 
-// The lease's fields, each beside the clause it was read out of. A verification
-// surface with a harder job than the clause list below it: these values were
-// produced by a model, and the slice's bar is that each one can be read against
-// the document -- so the citation is not a footnote here, it is the thing being
-// checked, and it links to the clause card further down this page.
+// The lease's fields, each beside the clause it was read out of, and — since
+// 13.2 — beside what a human said about it. A verification surface with a
+// harder job than the clause list below it: these values were produced by a
+// model, so the citation is not a footnote here, it is the thing being checked,
+// and it links to the clause card further down this page.
+//
+// One block per field rather than one table row, which is 13.2's change: a row
+// that carries a value, a citation, a decision and a form is not a row.
 //
 // A field that was not extracted is shown as *absent*, never as empty. "The
 // lease does not say" and "we did not manage to read it" are different facts,
 // and a blank renders both the same way.
 function twinCard(detail: DocumentChunks, context: PageContext): Html {
-  const found = new Map(detail.facts.map((fact) => [fact.field, fact]));
+  const facts = new Map(detail.facts.map((fact) => [fact.field, fact]));
+  const reviews = new Map(
+    detail.reviews.map((review) => [review.field, review]),
+  );
   const read = detail.facts[0];
+  const mayWrite = permits(context.role, 'mutate');
   const extract =
-    permits(context.role, 'mutate') && detail.chunks.length > 0
+    mayWrite && detail.chunks.length > 0
       ? h`<form method="post"
               action="/admin/units/${detail.unit.unit.id}/documents/${detail.document.id}/extract"
               class="inline">
@@ -434,30 +443,18 @@ function twinCard(detail: DocumentChunks, context: PageContext): Html {
             </form>`
       : h``;
 
-  const rows = h`<table class="rows">
-          <thead><tr><th>שדה</th><th>ערך</th><th>מקור</th><th>ודאות</th></tr></thead>
-          <tbody>${leaseFields.map((field) => {
-            const fact = found.get(field);
-            return h`<tr>
-              <td>${leaseFieldNames[field]}</td>
-              <td>${
-                fact
-                  ? fieldValue(fact)
-                  : h`<span class="muted">לא נקרא מהחוזה</span>`
-              }</td>
-              <td>${
-                fact
-                  ? h`<a href="#clause-${fact.chunkId}">${
-                      fact.clauseRef
-                        ? clauseTag(fact.clauseRef)
-                        : h`<span class="tag">ללא מספור</span>`
-                    }</a> · ${pageRange(fact.pageFrom, fact.pageTo)}`
-                  : h`<span class="muted">—</span>`
-              }</td>
-              <td>${fact ? confidenceNames[fact.confidence] : h`<span class="muted">—</span>`}</td>
-            </tr>`;
-          })}</tbody>
-        </table>`;
+  const blocks = leaseFields.map((field) =>
+    fieldBlock(detail, field, facts.get(field), reviews.get(field), mayWrite),
+  );
+
+  // How many of the fields that were read are settled. The count is the answer
+  // to the only question this card is asked from across the room, and it is
+  // deliberately over *extracted* fields: a lease that says nothing about its
+  // deductibles has nothing to confirm, and counting it as outstanding would
+  // make a complete review impossible to reach.
+  const settled = detail.facts.filter((fact) =>
+    standing(reviews.get(fact.field)),
+  ).length;
 
   return h`<div class="card">
           <h2>שדות החוזה</h2>
@@ -465,22 +462,210 @@ function twinCard(detail: DocumentChunks, context: PageContext): Html {
             ${
               read
                 ? h`נקראו ${date(read.extractedAt.slice(0, 10))} · ${ltr(read.model)} ·
-                    <strong>טרם אושרו</strong> — אישור ותיקון של כל שדה מגיעים בפרוסה הבאה.`
+                    ${
+                      settled === detail.facts.length
+                        ? h`<strong>כל השדות שנקראו אושרו</strong>`
+                        : h`<strong>${ltr(`${settled}/${detail.facts.length}`)}</strong> מהשדות שנקראו אושרו`
+                    }`
                 : h`השדות טרם נקראו מהחוזה.`
             }
             ${extract}
           </p>
-          ${rows}
+          <ul class="hits">${blocks}</ul>
         </div>`;
 }
+
+// A review describes what is on the screen only while the extraction it was a
+// statement about is still the extraction on the screen. `stands` is occupancy's
+// answer to that, computed against the stored value rather than guessed here.
+function standing(review: LeaseFieldReview | undefined): boolean {
+  return review?.stands === true;
+}
+
+// One field: its state, its value, its citation, and — for a role that may
+// write — the two decisions that can be made about it.
+//
+// The four states are four different sentences on purpose. A confirmation is a
+// human's statement about *a value*, so when a re-extraction changes that value
+// the confirmation does not travel with it: the field goes back to needing a
+// look, and the review is still shown, named as out of date. A green tick beside
+// a number nobody has ever seen is the failure the whole citation apparatus
+// exists to prevent, arriving at the last step.
+function fieldBlock(
+  detail: DocumentChunks,
+  field: LeaseField,
+  fact: LeaseFact | undefined,
+  review: LeaseFieldReview | undefined,
+  mayWrite: boolean,
+): Html {
+  const name = leaseFieldNames[field];
+  if (!fact) {
+    return h`<li class="stack">
+        <p><strong>${name}</strong> · <span class="muted">לא נקרא מהחוזה</span></p>
+        ${
+          review
+            ? h`<p class="muted">${reviewNote(detail, review)} — <strong>אינו עדכני:</strong>
+                השדה אינו נקרא מהחוזה עוד.</p>`
+            : h``
+        }
+      </li>`;
+  }
+
+  const stands = standing(review);
+  const shown = stands && review ? review.value : fact.value;
+
+  return h`<li class="stack">
+      <p>
+        <strong>${name}</strong> ·
+        ${
+          stands && review
+            ? h`${review.decision === 'corrected' ? 'תוקן' : 'אושר'} ·
+                <span class="muted">${reviewNote(detail, review)}</span>`
+            : h`<span class="muted">טרם אושר</span>`
+        }
+      </p>
+      ${fieldValue(field, shown)}
+      <p class="muted">
+        <a href="#clause-${fact.chunkId}">${
+          fact.clauseRef
+            ? clauseTag(fact.clauseRef)
+            : h`<span class="tag">ללא מספור</span>`
+        }</a>
+        · ${pageRange(fact.pageFrom, fact.pageTo)}
+        · ${confidenceNames[fact.confidence]}
+      </p>
+      ${
+        stands && review?.decision === 'corrected'
+          ? h`<details>
+              <summary class="muted">מה שנקרא מהחוזה, לפני התיקון</summary>
+              ${fieldValue(field, review.reviewedValue)}
+            </details>`
+          : h``
+      }
+      ${
+        review && !stands
+          ? h`<p class="muted"><strong>ביקורת קודמת, שאינה עדכנית:</strong>
+              ${reviewNote(detail, review)}. הערך נקרא מחדש מאז והשתנה.</p>`
+          : h``
+      }
+      ${mayWrite ? reviewForms(detail, field, fact, stands) : h``}
+    </li>`;
+}
+
+// Who decided, and when. The address rather than the id where `staff` could
+// resolve one — and the id where it could not, because an operator who has
+// since gone is not a reason to lose the record that they confirmed something.
+function reviewNote(detail: DocumentChunks, review: LeaseFieldReview): Html {
+  const who = detail.reviewers[review.reviewedById] ?? review.reviewedById;
+  return h`${who} · ${date(review.reviewedAt.slice(0, 10))}`;
+}
+
+// The two decisions. Confirming posts nothing about the value: the command
+// copies it off the fact it reads itself. Both carry the id of the extraction
+// being looked at, so a re-read between this page rendering and the press is a
+// refusal rather than a name attached to a value nobody saw.
+function reviewForms(
+  detail: DocumentChunks,
+  field: LeaseField,
+  fact: LeaseFact,
+  stands: boolean,
+): Html {
+  const base = `/admin/units/${detail.unit.unit.id}/documents/${detail.document.id}/fields/${field}`;
+  const groups = editableGroups(fact.value);
+  return h`<p>
+      <form method="post" action="${base}/confirm" class="inline">
+        <input type="hidden" name="factId" value="${fact.id}" />
+        <button type="submit" class="linkish">${stands ? 'אישור מחדש' : 'אישור הערך'}</button>
+      </form>
+    </p>
+    <details>
+      <summary class="linkish">תיקון הערך</summary>
+      <form method="post" action="${base}/correct" class="stack">
+        <input type="hidden" name="factId" value="${fact.id}" />
+        ${groups.map((group) => editGroup(group))}
+        <button type="submit" class="submit">שמירת התיקון</button>
+      </form>
+    </details>`;
+}
+
+// One block of the correction form. The citation is printed and is not an
+// input: it is what makes the value checkable against the contract, and a text
+// box over it would let a person do by hand exactly what the extractor refuses
+// to let the model do — name a clause that does not say this.
+//
+// A row of a list gets a checkbox that removes it, which is the correction the
+// real lease needs first: the securities annex offers a deposit *or* a bank
+// guarantee, and the twin read it as both.
+function editGroup(group: EditableGroup): Html {
+  const rows = group.leaves.map((leaf) => {
+    const label = leafNames[lastSegment(leaf.path)] ?? lastSegment(leaf.path);
+    // The long values here are the ones that quote the clause -- a re-basing
+    // rule, a deductible's own words -- and a single line hides all but their
+    // first few. The threshold is on the value rather than on the key, so a
+    // sixth field in the registry gets the same treatment without being named.
+    const long = leaf.kind === 'text' && String(leaf.value).length > 60;
+    return h`<p class="field">
+        <label for="e-${leaf.path}">${label}</label>
+        ${
+          long
+            ? h`<textarea id="e-${leaf.path}" name="edit.${leaf.path}" rows="3">${String(leaf.value)}</textarea>`
+            : h`<input id="e-${leaf.path}" name="edit.${leaf.path}"
+                   ${leaf.kind === 'number' ? h`inputmode="numeric"` : h``}
+                   value="${String(leaf.value)}" />`
+        }
+      </p>`;
+  });
+  const citation = group.clauseRef
+    ? clauseTag(group.clauseRef)
+    : h`<span class="muted">ללא מספור</span>`;
+  if (group.row === null) {
+    return h`<div class="form-grid">${rows}</div>`;
+  }
+  return h`<fieldset class="stack">
+      <legend class="muted">${citation}</legend>
+      <p class="field">
+        <label>
+          <input type="checkbox" name="drop.${group.row}" value="1" />
+          השורה הזו אינה שייכת — הסרה
+        </label>
+      </p>
+      <div class="form-grid">${rows}</div>
+    </fieldset>`;
+}
+
+function lastSegment(path: string): string {
+  return path.slice(path.lastIndexOf('.') + 1);
+}
+
+// The keys of a stored value, in the office's words. Named here and not in
+// `occupancy` for the reason the asset kinds are: the module speaks the
+// vocabulary and the board speaks Hebrew. A key with no entry renders as itself
+// rather than as nothing — a sixth field in the registry gets a usable form on
+// the day it is defined, and a translation when someone writes one.
+const leafNames: Record<string, string> = {
+  from: 'מתאריך',
+  to: 'עד תאריך',
+  noticeBy: 'הודעה עד',
+  capYears: 'תקרה בשנים',
+  statedText: 'לשון הסעיף',
+  baseAmount: 'סכום בסיס',
+  currency: 'מטבע',
+  indexBaseMonth: 'חודש בסיס',
+  rule: 'כלל העדכון',
+  kind: 'סוג',
+  statedAmount: 'סכום כפי שנכתב',
+  event: 'אירוע',
+  days: 'ימים',
+  subject: 'נושא',
+};
 
 // Rendered per field, and with no arithmetic anywhere: SPEC.md rule 7 reaches
 // the presentation layer too, because a subtotal drawn on a page is a charge
 // however carefully it is labelled. Every figure here is the one the contract
 // prints.
-function fieldValue(fact: LeaseFact): Html {
-  if (fact.field === 'term') {
-    const term = fact.value as {
+function fieldValue(field: LeaseField, value: Record<string, unknown>): Html {
+  if (field === 'term') {
+    const term = value as {
       initial?: { from?: string | null; to?: string | null };
       options?: Array<{
         from?: string | null;
@@ -507,8 +692,8 @@ function fieldValue(fact: LeaseFact): Html {
         ${term.statedText ? h`<p class="clause">${term.statedText}</p>` : h``}`;
   }
 
-  if (fact.field === 'rent') {
-    const rent = fact.value as {
+  if (field === 'rent') {
+    const rent = value as {
       baseAmount?: string | null;
       currency?: string | null;
       indexBaseMonth?: string | null;
@@ -521,7 +706,7 @@ function fieldValue(fact: LeaseFact): Html {
         ${rent.rule ? h`<p class="clause">${rent.rule}</p>` : h``}`;
   }
 
-  const rows = (fact.value as { items?: Array<Record<string, unknown>> }).items;
+  const rows = (value as { items?: Array<Record<string, unknown>> }).items;
   if (!rows || rows.length === 0) {
     return h`<span class="muted">—</span>`;
   }

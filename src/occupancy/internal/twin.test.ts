@@ -4,6 +4,8 @@ import {
   annexOf,
   buildRequest,
   type ClauseSource,
+  leaseFieldSpec,
+  leaseFields,
   maxClausesPerField,
   readReply,
   selectClauses,
@@ -319,5 +321,83 @@ describe('twin — what a reply is believed for', () => {
       sent,
     );
     assert.equal(field?.confidence, 'low');
+  });
+});
+
+// The property slice 13.2 rests on. `parse` maps the model's reply shape to the
+// stored shape; reading it a second time must give the stored shape back
+// unchanged, because a human's correction is applied to a *stored* value and
+// then goes through this same function -- so the citation rule that governs the
+// model's answer governs theirs. A second parser for the stored shape would be a
+// second copy of every rule in the registry, and the copy that drifts is the one
+// that stops dropping an uncited row.
+describe('twin — parse accepts its own output', () => {
+  const clauses = [annexTerm, annexRent, bodyNotice];
+  const sent = new Map(clauses.map((row) => [row.id, row]));
+
+  // One reply per field, in the shape the model returns, so the stored values
+  // below are produced by the same path production uses.
+  const replies: Record<string, unknown> = {
+    term: {
+      initialFrom: '01.01.2026',
+      initialTo: '31.12.2028',
+      options: [
+        {
+          from: '01.01.2029',
+          to: '31.12.2030',
+          noticeBy: '30.09.2028',
+          statedText: null,
+          chunkId: annexTerm.id,
+        },
+      ],
+      capYears: 10,
+      statedText: 'שלוש שנים ושתי אופציות',
+    },
+    rent: {
+      baseAmount: '4,250',
+      currency: 'ש"ח',
+      indexBaseMonth: 'ינואר 2026',
+      rule: 'עדכון שנתי לפי המדד',
+    },
+    securities: [
+      {
+        kind: 'פיקדון',
+        statedAmount: '10,000',
+        statedText: 'הפקדה במזומן',
+        chunkId: annexTerm.id,
+      },
+    ],
+    notice: [
+      { event: 'הארכה', days: 90, statedText: null, chunkId: bodyNotice.id },
+    ],
+    deductibles: [
+      {
+        subject: 'דוד חשמל',
+        statedText: 'על חשבון השוכר',
+        chunkId: bodyNotice.id,
+      },
+    ],
+  };
+
+  for (const field of leaseFields) {
+    it(`round-trips ${field} through its own stored shape`, () => {
+      const spec = leaseFieldSpec(field);
+      const stored = spec.parse(replies[field], sent);
+      assert.notEqual(stored, null);
+      assert.deepEqual(spec.parse(stored, sent), stored);
+    });
+  }
+
+  it('holds a corrected row to the same citation rule the model was', () => {
+    // A row citing a clause this document does not have is dropped, whoever
+    // wrote it. The whole of why a correction goes back through `parse`.
+    const stored = leaseFieldSpec('securities').parse(
+      replies.securities,
+      sent,
+    ) as { items: Array<Record<string, unknown>> };
+    const forged = {
+      items: [{ ...stored.items[0], chunkId: 'chunk-not-in-this-document' }],
+    };
+    assert.equal(leaseFieldSpec('securities').parse(forged, sent), null);
   });
 });
