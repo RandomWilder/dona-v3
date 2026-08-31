@@ -17,9 +17,11 @@ import type {
   ExtractTwinInput,
   IngestDocumentInput,
   Ingestion,
+  LeaseFieldReview,
   Occupancy,
   OpenTenancyInput,
   Party,
+  ReviewLeaseFieldInput,
   Tenancy,
 } from '../../occupancy/contract.ts';
 import type {
@@ -73,13 +75,20 @@ export interface StaffCommands {
   // into fields writes rows, so a viewer may not do it -- and it is the same
   // guard whether the rows come from a parser or from a model.
   extractTwin(input: ExtractTwinInput, session: Session): Promise<Extraction>;
+  // Slice 13.2. `mutate` for the fifth time and no new rule -- confirming a
+  // field writes a row, so a viewer may not, and it is the same guard whether
+  // the row records a parser, a model or a person.
+  reviewLeaseField(
+    input: ReviewLeaseFieldInput,
+    session: Session,
+  ): Promise<LeaseFieldReview>;
 }
 
 export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
   const clock = deps.clock ?? systemClock;
   const audit = deps.audit ?? createAuditLog(deps.pool, clock);
 
-  // One shape for all eleven. The capability check runs *inside* the audited
+  // One shape for all twelve. The capability check runs *inside* the audited
   // work, so a refusal leaves an `error` row with code not_allowed rather than
   // no row at all — the pattern identity established for rejected commands —
   // and it runs *before* the module is reached, so a viewer never touches
@@ -152,6 +161,10 @@ export function createStaffCommands(deps: StaffCommandDeps): StaffCommands {
     extractTwin: (input, session) =>
       guard('extractTwin', 'mutate', session, (actor) =>
         deps.occupancy.extractTwin(input, actor),
+      ),
+    reviewLeaseField: (input, session) =>
+      guard('reviewLeaseField', 'mutate', session, (actor) =>
+        deps.occupancy.reviewLeaseField(input, actor),
       ),
   };
 }

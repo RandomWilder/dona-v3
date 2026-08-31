@@ -20,7 +20,12 @@ import { createMemoryStore, type ObjectStore } from '../kernel/objects.ts';
 import type { PdfPage, PdfText } from '../kernel/pdf.ts';
 import { migratedPoolOrNull, skipReason } from '../kernel/pg-support.ts';
 import { createPortfolio } from '../portfolio/contract.ts';
-import { type Actor, createOccupancy, maxSearchLimit } from './contract.ts';
+import {
+  type Actor,
+  createOccupancy,
+  type LeaseFact,
+  maxSearchLimit,
+} from './contract.ts';
 
 // Contract tests: every command goes through contract.ts — occupancy's, and
 // identity's and portfolio's too, since this module composes them. The pool is
@@ -1899,6 +1904,423 @@ describe('occupancy contract', () => {
           assert.notEqual(fact.tenancyId, two.tenancy.id);
           assert.equal(fact.documentId, one.document.id);
         }
+      });
+    });
+
+    // Slice 13.2. A model's answer is a claim; these are the rows that record a
+    // human answering it.
+    describe('reviewing a field', () => {
+      // The same well-behaved model, plus a securities annex that reads one
+      // obligation as two -- which is what the real lease did, and the reason a
+      // reviewer needs to be able to drop a row at all.
+      function readsTwoSecurities(): Extractor {
+        return createFakeExtractor((request) => {
+          const chunkId = /\[([^\]]+)\]/.exec(request.input)?.[1] ?? null;
+          const field = request.name.replace('lease_', '');
+          if (field !== 'securities' || chunkId === null) {
+            return {
+              found: chunkId !== null,
+              chunkId,
+              confidence: 'high',
+              value: values[field],
+            };
+          }
+          return {
+            found: true,
+            chunkId,
+            confidence: 'high',
+            value: [
+              {
+                kind: 'פיקדון',
+                statedAmount: '10,000',
+                statedText: 'הפקדה במזומן',
+                chunkId,
+              },
+              {
+                kind: 'ערבות בנקאית',
+                statedAmount: '10,000',
+                statedText: 'ערבות אוטונומית',
+                chunkId,
+              },
+            ],
+          };
+        });
+      }
+
+      async function extractedLease(pool: Pool, extractor?: Extractor) {
+        const store = createMemoryStore();
+        const built = await ingestedLease(
+          pool,
+          extractor ?? readsTwoSecurities(),
+          store,
+        );
+        await built.occupancy.extractTwin(
+          { documentId: built.document.id },
+          actor,
+        );
+        const facts = await built.occupancy.listLeaseFacts(built.document.id);
+        return { ...built, store, facts };
+      }
+
+      function factOf(facts: LeaseFact[], field: string): LeaseFact {
+        const found = facts.find((fact) => fact.field === field);
+        assert.ok(found, `no ${field} was extracted`);
+        return found;
+      }
+
+      it('records who confirmed a field, and what they confirmed', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, tenancy, document, facts } =
+            await extractedLease(pool);
+          const term = factOf(facts, 'term');
+
+          const review = await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'term',
+              factId: term.id,
+              decision: 'confirmed',
+            },
+            actor,
+          );
+
+          assert.equal(review.decision, 'confirmed');
+          assert.equal(review.reviewedById, actor.id);
+          assert.equal(review.reviewedByKind, 'staff');
+          // The value is copied off the fact this command read, never posted:
+          // a confirmation is a statement about what was on the screen.
+          assert.deepEqual(review.value, term.value);
+          assert.deepEqual(review.reviewedValue, term.value);
+          assert.equal(review.stands, true);
+          // The column every read of a tenant's twin filters on, copied from
+          // the fact and never taken from a caller.
+          assert.equal(review.tenancyId, tenancy.id);
+
+          const [read] = await occupancy.listFieldReviews(document.id);
+          assert.equal(read?.id, review.id);
+          assert.equal(read?.stands, true);
+        });
+      });
+
+      it('drops the row a reviewer says does not belong', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          const securities = factOf(facts, 'securities');
+          const before = securities.value as { items: unknown[] };
+          assert.equal(before.items.length, 2);
+
+          const review = await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'securities',
+              factId: securities.id,
+              decision: 'corrected',
+              drops: ['items.1'],
+            },
+            actor,
+          );
+
+          const after = review.value as {
+            items: Array<Record<string, unknown>>;
+          };
+          assert.equal(after.items.length, 1);
+          assert.equal(after.items[0]?.kind, 'פיקדון');
+          // What the extraction said is kept beside what the human said, which
+          // is the only way the correction is checkable later.
+          assert.deepEqual(review.reviewedValue, securities.value);
+        });
+      });
+
+      it('retypes a value, and re-derives the citation rather than taking it', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          const securities = factOf(facts, 'securities');
+          const cited = (
+            securities.value as { items: Array<Record<string, unknown>> }
+          ).items[0];
+
+          const review = await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'securities',
+              factId: securities.id,
+              decision: 'corrected',
+              edits: { 'items.0.kind': 'שטר חוב' },
+            },
+            actor,
+          );
+
+          const row = (
+            review.value as { items: Array<Record<string, unknown>> }
+          ).items[0];
+          assert.equal(row?.kind, 'שטר חוב');
+          // The citation came back off the chunk, not out of the request: a
+          // human correcting a field is held to exactly the rule the model was.
+          assert.equal(row?.chunkId, cited?.chunkId);
+          assert.equal(row?.clauseRef, cited?.clauseRef);
+        });
+      });
+
+      it('refuses an edit to a citation, and a correction that states nothing', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          const securities = factOf(facts, 'securities');
+          const input = {
+            documentId: document.id,
+            field: 'securities',
+            factId: securities.id,
+            decision: 'corrected',
+          };
+
+          // Repointing a citation by hand is the invented-citation failure
+          // arriving from the other side, and it is refused rather than ignored.
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              { ...input, edits: { 'items.0.chunkId': newId() } },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'invalid',
+          );
+          // Dropping every row is a deletion, and there is no way to delete a
+          // field: a lease that states nothing and a field nobody could read are
+          // different facts, and this would render as the first.
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              { ...input, drops: ['items.0', 'items.1'] },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'invalid',
+          );
+          assert.deepEqual(await occupancy.listFieldReviews(document.id), []);
+        });
+      });
+
+      it('refuses to confirm an extraction that is no longer the one on screen', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts, store } =
+            await extractedLease(pool);
+          const term = factOf(facts, 'term');
+
+          // Somebody read the lease again between the page rendering and the
+          // press. Re-extraction mints new fact ids, which is what makes this
+          // detectable at all.
+          const { occupancy: again } = world(
+            pool,
+            fixedClock(new Date('2026-09-16T09:00:00Z')),
+            store,
+            pdfOf(twinLease),
+            createFakeEmbedder(embeddingColumnDimensions),
+            readsTwoSecurities(),
+          );
+          await again.extractTwin({ documentId: document.id }, actor);
+
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              {
+                documentId: document.id,
+                field: 'term',
+                factId: term.id,
+                decision: 'confirmed',
+              },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'conflict',
+          );
+        });
+      });
+
+      it('keeps a confirmation standing when a re-read says the same thing', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts, store } =
+            await extractedLease(pool);
+          await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'term',
+              factId: factOf(facts, 'term').id,
+              decision: 'confirmed',
+            },
+            actor,
+          );
+
+          // The same document read again by the same model. The office does not
+          // re-confirm five fields because somebody pressed a button.
+          const { occupancy: again } = world(
+            pool,
+            fixedClock(new Date('2026-09-16T09:00:00Z')),
+            store,
+            pdfOf(twinLease),
+            createFakeEmbedder(embeddingColumnDimensions),
+            readsTwoSecurities(),
+          );
+          await again.extractTwin({ documentId: document.id }, actor);
+
+          const reviews = await occupancy.listFieldReviews(document.id);
+          assert.equal(reviews.length, 1);
+          assert.equal(reviews[0]?.stands, true);
+        });
+      });
+
+      it('stops a confirmation standing when the re-read changes the value', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts, store } =
+            await extractedLease(pool);
+          await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'term',
+              factId: factOf(facts, 'term').id,
+              decision: 'confirmed',
+            },
+            actor,
+          );
+
+          // 13.1's rule, and the reason this table holds `reviewed_value`: a
+          // re-extraction producing a different value must not leave the old
+          // confirmation standing beside the new number. The review is kept and
+          // reported as no longer standing, rather than deleted -- deleting it
+          // would throw away the evidence that the value used to be different.
+          const { occupancy: again } = world(
+            pool,
+            fixedClock(new Date('2026-09-16T09:00:00Z')),
+            store,
+            pdfOf(twinLease),
+            createFakeEmbedder(embeddingColumnDimensions),
+            citesFirstClause((field) =>
+              field === 'term'
+                ? { ...(values.term as object), capYears: 5 }
+                : values[field],
+            ),
+          );
+          await again.extractTwin({ documentId: document.id }, actor);
+
+          const reviews = await occupancy.listFieldReviews(document.id);
+          assert.equal(reviews.length, 1);
+          assert.equal(reviews[0]?.stands, false);
+          // Still says what was confirmed, and by whom.
+          const kept = reviews[0]?.reviewedValue as { capYears: number };
+          assert.equal(kept.capYears, 10);
+        });
+      });
+
+      it('keeps one review per field, however often it is reviewed', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          const term = factOf(facts, 'term');
+          const input = {
+            documentId: document.id,
+            field: 'term',
+            factId: term.id,
+            decision: 'confirmed',
+          };
+          const first = await occupancy.reviewLeaseField(input, actor);
+          const second = await occupancy.reviewLeaseField(input, actor);
+
+          // A second look is the same person looking again, not a second
+          // opinion to reconcile.
+          assert.equal(second.id, first.id);
+          assert.equal(
+            (await occupancy.listFieldReviews(document.id)).length,
+            1,
+          );
+        });
+      });
+
+      it('refuses a field nobody read, a field that is not one, and an unknown document', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          const term = factOf(facts, 'term');
+
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              {
+                documentId: document.id,
+                field: 'notice',
+                factId: term.id,
+                decision: 'confirmed',
+              },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'not_found',
+          );
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              {
+                documentId: document.id,
+                field: 'the-colour-of-the-door',
+                factId: term.id,
+                decision: 'confirmed',
+              },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'invalid',
+          );
+          await assert.rejects(
+            occupancy.reviewLeaseField(
+              {
+                documentId: newId(),
+                field: 'term',
+                factId: term.id,
+                decision: 'confirmed',
+              },
+              actor,
+            ),
+            (error: KernelError) => error.code === 'not_found',
+          );
+        });
+      });
+
+      it('audits the decision and copies no value into the row', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts } = await extractedLease(pool);
+          await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'securities',
+              factId: factOf(facts, 'securities').id,
+              decision: 'corrected',
+              drops: ['items.1'],
+            },
+            actor,
+          );
+
+          const rows = await pool.query<{ inputs: Record<string, unknown> }>(
+            `SELECT inputs FROM audit_log
+              WHERE action = 'occupancy.reviewLeaseField' AND subject_id = $1`,
+            [document.id],
+          );
+          assert.equal(rows.rows.length, 1);
+          // A correction is the contract's own words retyped, and the review
+          // table is already the place they live. audit_log is not a second one.
+          assert.deepEqual(rows.rows[0]?.inputs, {
+            documentId: document.id,
+            field: 'securities',
+            decision: 'corrected',
+          });
+        });
+      });
+
+      it("keeps one tenancy's reviews out of another's", async (t) => {
+        await withPool(t, async (pool) => {
+          const one = await extractedLease(pool);
+          const two = await extractedLease(pool);
+          for (const lease of [one, two]) {
+            await lease.occupancy.reviewLeaseField(
+              {
+                documentId: lease.document.id,
+                field: 'term',
+                factId: factOf(lease.facts, 'term').id,
+                decision: 'confirmed',
+              },
+              actor,
+            );
+          }
+
+          const reviews = await one.occupancy.listFieldReviews(one.document.id);
+          assert.equal(reviews.length, 1);
+          assert.equal(reviews[0]?.tenancyId, one.tenancy.id);
+          assert.notEqual(reviews[0]?.tenancyId, two.tenancy.id);
+        });
       });
     });
   });

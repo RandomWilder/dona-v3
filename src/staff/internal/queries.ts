@@ -7,6 +7,7 @@ import type {
   ClauseHit,
   DocumentRecord,
   LeaseFact,
+  LeaseFieldReview,
   OccupancyResolution,
   TenancyView,
 } from '../../occupancy/contract.ts';
@@ -56,6 +57,18 @@ export interface DocumentChunks {
   // order. Empty means nobody has pressed the button — which the screen says
   // rather than rendering a lease that appears to state nothing.
   facts: LeaseFact[];
+  // Slice 13.2. What a human said about those fields. A separate list rather
+  // than a property of a fact because the two have different authors and
+  // different lifetimes: a re-extraction replaces every fact and leaves every
+  // review standing, and `stands` on the review is how the screen finds out
+  // which of them still describes what is on it.
+  reviews: LeaseFieldReview[];
+  // Who those reviewers are, by operator id. Composed here for the reason the
+  // people on a unit page are: `occupancy` stores an actor id, correctly, since
+  // an operator's address is `staff`'s own fact and not that module's. An id
+  // this map has no entry for renders as the id — an operator who was deleted
+  // is not a reason to lose the record that they confirmed something.
+  reviewers: Record<string, string>;
 }
 
 export interface PersonDetail {
@@ -89,6 +102,9 @@ export interface StaffQueries {
   ): Promise<DocumentChunks>;
   getPersonDetail(personId: string, session: Session): Promise<PersonDetail>;
 }
+
+const uuidShaped =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
   const clock = deps.clock ?? systemClock;
@@ -130,6 +146,40 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         return run();
       },
     );
+  }
+
+  // The addresses behind the ids on the reviews. One query, only the ids that
+  // are actually on the page, and only for `staff` actors: occupancy records an
+  // actor kind beside the id, and a tenant or an agent id would name nothing in
+  // this table — asking for it anyway would be this module assuming every actor
+  // is one of its own.
+  async function reviewerEmails(
+    reviews: LeaseFieldReview[],
+  ): Promise<Record<string, string>> {
+    const ids = [
+      ...new Set(
+        reviews
+          .filter(
+            (review) =>
+              review.reviewedByKind === 'staff' &&
+              // occupancy stores an actor id as text, because an actor id is
+              // not always a row in this database. This column is a uuid, and
+              // casting something else to one is an error rather than an empty
+              // result — so anything that is not shaped like an operator id is
+              // simply not asked about.
+              uuidShaped.test(review.reviewedById),
+          )
+          .map((review) => review.reviewedById),
+      ),
+    ];
+    if (ids.length === 0) {
+      return {};
+    }
+    const found = await deps.pool.query<{ id: string; email: string }>(
+      'SELECT id, email FROM staff_operators WHERE id = ANY($1::uuid[])',
+      [ids],
+    );
+    return Object.fromEntries(found.rows.map((row) => [row.id, row.email]));
   }
 
   return {
@@ -190,6 +240,7 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         // request. That is what makes this search unable to reach another
         // tenancy's lease even if someone edits the URL: the id it filters on
         // was resolved from the unit the operator opened.
+        const reviews = await deps.occupancy.listFieldReviews(document.id);
         const asked = typeof query === 'string' ? query.trim() : '';
         const search =
           asked.length > 0 && tenancy
@@ -210,6 +261,10 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
           // is the lease's own words rearranged, so seeing one is the same
           // privacy event as opening the clause it was read out of.
           facts: await deps.occupancy.listLeaseFacts(document.id),
+          // And the reviews on the same read again, for the same reason: a
+          // correction is the contract's words retyped by a person.
+          reviews,
+          reviewers: await reviewerEmails(reviews),
         };
       }),
 

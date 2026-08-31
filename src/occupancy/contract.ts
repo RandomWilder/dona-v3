@@ -18,6 +18,8 @@ export type {
   IngestDocumentInput,
   Ingestion,
   LeaseFact,
+  LeaseFieldReview,
+  ReviewLeaseFieldInput,
   SearchClausesInput,
 } from './internal/documents.ts';
 export {
@@ -27,6 +29,13 @@ export {
   maxDocumentBytes,
   maxSearchLimit,
 } from './internal/documents.ts';
+// Slice 13.2. The correction form is generated from the stored value, and the
+// rule about which parts of one a human may touch is a fact about a lease field
+// rather than about HTML -- so the screen asks this module rather than deciding
+// for itself. `applyEdits` is deliberately *not* exported: the edits are applied
+// inside the command, to the value it read, and never by a caller.
+export type { EditableGroup, EditableLeaf } from './internal/edits.ts';
+export { editableGroups } from './internal/edits.ts';
 export type { OccupancyRole, TenancyAccess } from './internal/roles.ts';
 export { occupancyRoles, tenancyAccess } from './internal/roles.ts';
 export type {
@@ -47,5 +56,9 @@ export { createOccupancy } from './internal/tenancies.ts';
 // Slice 13.1. The vocabulary of the twin, exported because a screen renders one
 // field per entry and 13.2 confirms them one at a time -- the registry's own
 // order is the order both read in.
-export type { Confidence, LeaseField } from './internal/twin.ts';
-export { leaseFields } from './internal/twin.ts';
+export type {
+  Confidence,
+  LeaseField,
+  ReviewDecision,
+} from './internal/twin.ts';
+export { leaseFields, reviewDecisions } from './internal/twin.ts';

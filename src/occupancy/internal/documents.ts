@@ -15,15 +15,20 @@ import type { PdfText } from '../../kernel/pdf.ts';
 import { asText, validId } from '../../kernel/validate.ts';
 import type { Portfolio } from '../../portfolio/contract.ts';
 import { chunkLease, type LeaseChunk } from './clauses.ts';
+import { applyEdits, EditError } from './edits.ts';
 import { documentPath } from './paths.ts';
 import {
   buildRequest,
   type Confidence,
   type ExtractedField,
   type LeaseField,
+  leaseFieldSpec,
   leaseFields,
+  type ReviewDecision,
   readReply,
   selectClauses,
+  validLeaseField,
+  validReviewDecision,
 } from './twin.ts';
 
 // Lease documents, indexed per occupancy. See SPEC-occupancy.md, "Lease
@@ -106,6 +111,52 @@ export interface Documents {
     actor: DocumentActor,
   ): Promise<Extraction>;
   listLeaseFacts(documentId: string): Promise<LeaseFact[]>;
+  // Slice 13.2: the human's answer to one of those fields. The only command in
+  // this module whose row is not derived from a document -- which is why it is
+  // the only one whose row survives the document being read again.
+  reviewLeaseField(
+    input: ReviewLeaseFieldInput,
+    actor: DocumentActor,
+  ): Promise<LeaseFieldReview>;
+  listFieldReviews(documentId: string): Promise<LeaseFieldReview[]>;
+}
+
+export interface ReviewLeaseFieldInput {
+  documentId: string;
+  field: string;
+  // The extraction this review is a statement about. A version token and not an
+  // id the caller is trusted with: everything else here is resolved server-side,
+  // and this exists so that confirming a value someone re-extracted a moment ago
+  // raises `conflict` instead of recording agreement with a number the operator
+  // never saw.
+  factId: string;
+  decision: string;
+  // A correction only. Paths into the stored value, from `editableGroups`, and
+  // the rows to remove. Never a value: a caller that could post a value could
+  // post one carrying a citation nobody checked.
+  edits?: Record<string, string>;
+  drops?: string[];
+}
+
+// One field, as a human left it. `value` is what they stand behind and
+// `reviewedValue` is what the extraction said at the time -- the pair is what
+// lets `stands` be answered later without keeping a copy of the extraction.
+export interface LeaseFieldReview {
+  id: string;
+  documentId: string;
+  tenancyId: string;
+  field: LeaseField;
+  decision: ReviewDecision;
+  value: Record<string, unknown>;
+  reviewedValue: Record<string, unknown>;
+  reviewedByKind: string;
+  reviewedById: string;
+  reviewedAt: string;
+  // The document's current fact for this field still holds the value this review
+  // was made about. False is not an error: it is a re-extraction having changed
+  // the ground under a human's statement, and the screen says so rather than
+  // showing a confirmation beside a number nobody confirmed.
+  stands: boolean;
 }
 
 export interface ExtractTwinInput {
@@ -266,6 +317,49 @@ interface FactRow {
 
 const factColumns = `id, document_id, tenancy_id, field, value, chunk_id,
   clause_ref, page_from, page_to, confidence, model, extracted_at`;
+
+interface ReviewRow {
+  id: string;
+  document_id: string;
+  tenancy_id: string;
+  field: string;
+  decision: string;
+  value: Record<string, unknown>;
+  reviewed_value: Record<string, unknown>;
+  reviewed_by_kind: string;
+  reviewed_by_id: string;
+  reviewed_at: Date;
+}
+
+const reviewColumns = `id, document_id, tenancy_id, field, decision, value,
+  reviewed_value, reviewed_by_kind, reviewed_by_id, reviewed_at`;
+
+// The same columns, qualified, for the one read that joins the fact beside them.
+const reviewColumnsFromR = `r.id, r.document_id, r.tenancy_id, r.field,
+  r.decision, r.value, r.reviewed_value, r.reviewed_by_kind, r.reviewed_by_id,
+  r.reviewed_at`;
+
+// A form posts strings and only strings, and a review's edits arrive as one.
+// Anything that is not a string pair is dropped here rather than reaching
+// `applyEdits`, which would have to grow an opinion about request shapes.
+function editsOf(value: unknown): Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const edits: Record<string, string> = {};
+  for (const [path, typed] of Object.entries(value)) {
+    if (typeof typed === 'string') {
+      edits[path] = typed;
+    }
+  }
+  return edits;
+}
+
+function dropsOf(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((row): row is string => typeof row === 'string')
+    : [];
+}
 
 export function validDocumentKind(
   value: unknown,
@@ -650,7 +744,172 @@ export function createDocuments(deps: DocumentDeps): Documents {
           (a, b) => leaseFields.indexOf(a.field) - leaseFields.indexOf(b.field),
         );
     },
+
+    async reviewLeaseField(input, actor) {
+      return audit.around(
+        {
+          actorKind: actor.kind,
+          actorId: actor.id,
+          action: 'occupancy.reviewLeaseField',
+          subjectId: asText(input?.documentId),
+          // Which field, and what was decided about it. Never the value and
+          // never the edits: a correction is the contract's own words retyped,
+          // and the review table is already the fifth place they live
+          // (tasks/fuses.md counts them). audit_log is not going to be a sixth.
+          inputs: {
+            documentId: asText(input?.documentId),
+            field: asText(input?.field),
+            decision: asText(input?.decision),
+          },
+        },
+        async () => {
+          const documentId = validId(input?.documentId, 'documentId');
+          const field = validLeaseField(input?.field);
+          const factId = validId(input?.factId, 'factId');
+          const decision = validReviewDecision(input?.decision);
+          // A review with no actor is not a record of who reviewed it, which is
+          // the whole of what this table is for.
+          const actorId = asText(actor?.id)?.trim();
+          if (!actorId) {
+            throw new KernelError('invalid', 'a review needs an actor');
+          }
+
+          const found = await pool.query<FactRow>(
+            `SELECT ${factColumns} FROM occupancy_lease_facts
+              WHERE document_id = $1 AND field = $2`,
+            [documentId, field],
+          );
+          const row = found.rows[0];
+          if (!row) {
+            // `not_found` and not `invalid`: the field is a real field of a real
+            // document, and there is nothing extracted to have an opinion about.
+            throw new KernelError('not_found', 'the field has not been read');
+          }
+          const fact = toFact(row);
+          if (fact.id !== factId) {
+            // Somebody read the lease again between this page rendering and this
+            // press. Recording agreement now would attach a human's name to a
+            // value they never saw.
+            throw new KernelError(
+              'conflict',
+              'the field was read again since the page was opened',
+            );
+          }
+
+          const value =
+            decision === 'confirmed'
+              ? fact.value
+              : await correctedValue(fact, input);
+
+          const now = clock.now();
+          const written = await pool.query<ReviewRow>(
+            `INSERT INTO occupancy_lease_field_reviews
+               (id, document_id, tenancy_id, field, decision, value,
+                reviewed_value, reviewed_by_kind, reviewed_by_id, reviewed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             ON CONFLICT (document_id, field) DO UPDATE SET
+               decision = EXCLUDED.decision,
+               value = EXCLUDED.value,
+               reviewed_value = EXCLUDED.reviewed_value,
+               reviewed_by_kind = EXCLUDED.reviewed_by_kind,
+               reviewed_by_id = EXCLUDED.reviewed_by_id,
+               reviewed_at = EXCLUDED.reviewed_at
+             RETURNING ${reviewColumns}`,
+            [
+              newId(clock),
+              fact.documentId,
+              // Copied from the fact, which copied it from the document. A
+              // tenancy id has never come from a caller in this module.
+              fact.tenancyId,
+              field,
+              decision,
+              JSON.stringify(value),
+              // What the review is a statement *about*. The same value for a
+              // correction as for a confirmation: both are answers to what the
+              // extraction said, and only the answer differs.
+              JSON.stringify(fact.value),
+              actor.kind,
+              actorId,
+              now,
+            ],
+          );
+          const stored = written.rows[0];
+          if (!stored) {
+            throw new KernelError('unavailable', 'the review was not stored');
+          }
+          // True by construction: `reviewed_value` was just read off the fact
+          // this call checked the id of.
+          return toReview(stored, true);
+        },
+      );
+    },
+
+    async listFieldReviews(documentId) {
+      const id = validId(documentId, 'documentId');
+      const found = await pool.query<ReviewRow & { stands: boolean }>(
+        `SELECT ${reviewColumnsFromR},
+                (f.value IS NOT NULL AND f.value = r.reviewed_value) AS stands
+           FROM occupancy_lease_field_reviews r
+           LEFT JOIN occupancy_lease_facts f
+             ON f.document_id = r.document_id AND f.field = r.field
+          WHERE r.document_id = $1`,
+        [id],
+      );
+      // In the registry's order, as the facts are: the two lists are read
+      // side by side on one screen, and a screen that had to sort them itself
+      // would be a second copy of an order this module already states.
+      return found.rows
+        .map((row) => toReview(row, row.stands === true))
+        .sort(
+          (a, b) => leaseFields.indexOf(a.field) - leaseFields.indexOf(b.field),
+        );
+    },
   };
+
+  // A correction, applied to the value this command read rather than to one a
+  // caller posted -- and then held to exactly the check the model's answer was.
+  // `parse` re-derives every `clauseRef` from the chunk its row cites and drops
+  // a row citing a clause this document does not have, so a human cannot write a
+  // citation any more than the model can invent one.
+  async function correctedValue(
+    fact: LeaseFact,
+    input: ReviewLeaseFieldInput,
+  ): Promise<Record<string, unknown>> {
+    let edited: Record<string, unknown>;
+    try {
+      edited = applyEdits(
+        fact.value,
+        editsOf(input?.edits),
+        dropsOf(input?.drops),
+      );
+    } catch (error) {
+      if (error instanceof EditError) {
+        throw new KernelError('invalid', error.message);
+      }
+      throw error;
+    }
+
+    const stored = await pool.query<ChunkRow>(
+      `SELECT ${chunkColumns} FROM occupancy_document_chunks
+        WHERE document_id = $1
+        ORDER BY ordinal`,
+      [fact.documentId],
+    );
+    const sent = new Map(
+      stored.rows.map(toChunk).map((chunk) => [chunk.id, chunk] as const),
+    );
+    const value = leaseFieldSpec(fact.field).parse(edited, sent);
+    if (value === null) {
+      // Emptying every row is a deletion, and there is no way to delete a
+      // field: a lease that states nothing and a field nobody could read are
+      // different facts, and this would render as the first.
+      throw new KernelError(
+        'invalid',
+        'the correction leaves the field stating nothing',
+      );
+    }
+    return value;
+  }
 
   // Delete then insert, in one transaction. Chunks are *derived* data with a
   // natural key -- unlike a document, whose re-upload is a correction (11.2) --
@@ -784,6 +1043,22 @@ export function createDocuments(deps: DocumentDeps): Documents {
       }
     });
   }
+}
+
+function toReview(row: ReviewRow, stands: boolean): LeaseFieldReview {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    tenancyId: row.tenancy_id,
+    field: row.field as LeaseField,
+    decision: row.decision as ReviewDecision,
+    value: row.value,
+    reviewedValue: row.reviewed_value,
+    reviewedByKind: row.reviewed_by_kind,
+    reviewedById: row.reviewed_by_id,
+    reviewedAt: row.reviewed_at.toISOString(),
+    stands,
+  };
 }
 
 function toFact(row: FactRow): LeaseFact {

@@ -745,6 +745,120 @@ third copy of a real contract's contents (12.1's rule, and `tasks/fuses.md` coun
 By field, in the registry's order. The verify read for this slice and the input to 13.2.
 Unaudited here, as this module's other reads are; `staff` audits its own use.
 
+## Reviewing a field (slice 13.2)
+
+13.1 ends with five fields on a screen and a sentence saying they are unreviewed. This slice
+is the surface that ends that sentence: an operator **confirms** a field or **corrects** it,
+and the record says who did which, to what value, and when.
+
+| Table | Holds |
+|---|---|
+| `occupancy_lease_field_reviews` | `id`, `document_id`, `tenancy_id`, `field`, `decision`, `value`, `reviewed_value`, `reviewed_by_kind`, `reviewed_by_id`, `reviewed_at` |
+
+Migration `0015_occupancy_lease_field_reviews.sql`. `ON DELETE RESTRICT` to the document and
+the tenancy, as everything else in this module is — and **to nothing else**, which is the
+next section.
+
+### A review is not derived data, so it is not a column on the fact
+
+Every other row this module has added since 12.1 is derived: a chunk, an embedding, a fact.
+Each is replaced wholesale when the thing above it is read again, and each says so. A review
+is the one row here that a machine did not produce, and it must survive the button that
+replaces the rest.
+
+That rules out the obvious shape. Confirmation columns on `occupancy_lease_facts` would be
+deleted by the next `extractTwin`, because that command deletes the document's facts and
+re-inserts them — a human's statement erased by someone pressing "read again", with nothing
+on the screen to show it ever existed. So the review is its own table, keyed
+`UNIQUE (document_id, field)`, and it holds **no foreign key to the fact or to the chunk**:
+both are replaced on every re-read, and a `RESTRICT` to either would make a review able to
+block a re-extraction, while a `CASCADE` would make it able to be silently erased by one.
+
+### `stands`, and what a re-extraction does to a confirmation
+
+13.1 stated the rule this slice had to honour: *a confirmation is a human's statement about a
+value, so a re-extraction that produces a different value must not leave the old confirmation
+standing beside the new number.*
+
+It is honoured by storing what the statement was about. `reviewed_value` is the extracted
+value at the moment of review, and `listFieldReviews` reports
+
+```
+stands = the document's current fact for this field exists, and its value = reviewed_value
+```
+
+as a `jsonb` comparison in SQL, where key order is already normalised. A re-extraction that
+returns the same value leaves the confirmation standing — the office does not re-confirm five
+fields because someone pressed a button. One that returns a different value, or none at all,
+leaves the review **superseded**: it is still in the table, still says who reviewed what, and
+the field counts as unreviewed until someone looks again. Deleting it would have satisfied the
+rule too, and would have thrown away the only evidence that the value used to be different.
+
+### The value of record
+
+Where a review stands, **its value is the value of record** and the extraction is the working
+that produced it. `listLeaseFacts` and `listFieldReviews` return the two halves separately
+because they have different authors; anything that answers a question about this tenancy --
+week 4's agent first — reads the standing review's value when there is one, and the fact's
+value only when there is not. The citation is the fact's either way: a review does not carry
+one.
+
+### A correction may change a value and may never change a citation
+
+A correction is applied to the value the extraction stored, server-side, from the fact read
+inside the command. It is expressed as **edits to the leaves of that value and rows to drop**,
+never as a value posted whole: a caller that could post a value could post a value with a
+citation nobody checked, which is 13.1's rejected-citation rule arriving from the other side.
+
+`internal/edits.ts` holds that, pure, beside `twin.ts`: `editableGroups` walks a stored value
+into the scalars a human may change — skipping `chunkId` and `clauseRef` on every row, which
+are shown and are not editable — and `applyEdits` puts the changes back. A path the stored
+value does not have is ignored rather than created, so the form cannot invent structure.
+
+The result then goes through `leaseFieldSpec(field).parse` with **the document's own chunks**
+as the sent-set, which is the same function and the same check the model's reply passed: a row
+whose `chunkId` does not name a clause of this document is dropped, and `clauseRef` is
+re-derived from the chunk rather than taken from the caller. A human correcting a field is held
+to exactly the citation rule the model was.
+
+That works because `parse` accepts its own output. It maps the model's reply shape to the
+stored shape, and as of this slice it also accepts the stored shape unchanged — `initial.from`
+as well as `initialFrom`, `{ items: [...] }` as well as a bare array. Idempotence is asserted
+per field as a property test rather than left as an intention, because it is what makes a
+correction a round trip instead of a second parser.
+
+### The fact id is a version token, not an id the caller is trusted with
+
+Confirming is a statement about the value on the screen, so the form carries the id of the fact
+it is looking at, and the command refuses with `conflict` when the document's current fact for
+that field is a different row. Re-extraction mints new fact ids, so this catches exactly the
+case that matters: someone re-read the lease between the render and the press, and the operator
+would otherwise be confirming a value they never saw. Nothing else comes from the caller --
+the tenancy, the value and the citation are all read server-side.
+
+### Commands
+
+#### `reviewLeaseField({ documentId, field, factId, decision, edits?, drops? }, actor) -> LeaseFieldReview`
+
+`decision` is `confirmed` or `corrected` — a `CHECK` in the schema, unlike `field`, because
+this vocabulary is not the one that was stated to be growing. A confirmation takes no edits and
+copies the fact's value; a correction applies its edits and drops and is refused as `invalid`
+if what comes out is not a value this field can hold — including the correction that drops
+every row, which is a deletion, and there is no way to delete a field.
+
+Unknown document or no fact for that field -> `not_found`. A field outside the registry ->
+`invalid`. A fact id that is not the current one -> `conflict`. Upsert on the natural key: a
+field reviewed twice has one review, the later one.
+
+Audited, with the document as its subject. `inputs` carries the field and the decision and
+**no values** — the review table is now the fifth place a real contract's text lives
+(`tasks/fuses.md` counts them) and `audit_log` is not going to be the sixth.
+
+#### `listFieldReviews(documentId) -> LeaseFieldReview[]`
+
+By field, in the registry's order, each with `stands`. Unaudited here, as this module's other
+reads are; `staff` audits its own use, on the same read as the clauses and the facts.
+
 ## Audited
 
 `openTenancy`, `addParty` and `endTenancy` are wrapped in the kernel's `audit.around`, so a
@@ -795,13 +909,30 @@ unit id is in `inputs`. The other two take the `tenancyId` as their subject.
 - **A tenancy with two documents has two twins, and nothing chooses between them.** Facts
   are keyed by document, because a re-upload is a correction rather than a version (11.2) and
   silently preferring one document's answer would be preferring the wrong one half the time.
-  Reconciling a tenancy-level view across documents belongs with the screen that confirms
-  fields (13.2), where a human is present to say which document is authoritative.
-- **Extraction is manual, synchronous and unreviewed.** An operator presses a button and waits
-  on five model calls; nothing triggers it on ingest, and until 13.2 every field is a claim
-  with no way to confirm or correct it. An extraction is a claim until a human confirms it.
-  Running the calls together and bounding each one keeps that wait inside a request that can
-  answer, and it does not make the wait *right* — a model call chain on the end of a browser
-  request wants the kernel's durable work, which is the same slice auto-ingest is waiting for.
-- **Nothing is removable.** No way to detach a party or delete a tenancy; corrections are a
-  manual database task until an admin screen owns them.
+  13.2 was expected to settle this, on the reasoning that the screen which confirms a field is
+  where a human is present to say which document is authoritative — and it did not. Reviews
+  are keyed by document as well, so a tenancy with two documents now carries two *reviewed*
+  twins and still nothing chooses between them. The choice needs a read that answers about a
+  tenancy rather than about a document, and the honest place for it is the slice that first
+  has to ask that question, which is week 4's.
+- **Extraction is manual and synchronous.** An operator presses a button and waits on five
+  model calls; nothing triggers it on ingest. Running the calls together and bounding each one
+  keeps that wait inside a request that can answer, and it does not make the wait *right* — a
+  model call chain on the end of a browser request wants the kernel's durable work, which is
+  the same slice auto-ingest is waiting for. **Unreviewed** is no longer part of this item:
+  13.2 records who confirmed or corrected each field, and a field nobody has looked at now
+  says so rather than reading as settled.
+- **A correction may edit and may drop, and may not add.** A reviewer can change a value the
+  extraction read and can drop a row that should not be there — the two things the real lease
+  actually needed. Adding a row, or filling in a leaf the extraction left null, is refused
+  rather than half-built: both are *stating* something the model did not, so both need a
+  citation the reviewer has to choose, and choosing a clause is a surface this screen does not
+  have. The reviewer's answer today is to correct a row that exists, or to leave the field
+  unconfirmed.
+- **A correction records no reason.** The review says what the value became and who made it
+  so, never why — and the why is the sentence that would turn a correction into a golden case
+  (PIPELINE.md §6). A note beside the decision, and the path from a correction to
+  `evals/golden/`, are one slice and are worth doing as one.
+- **Nothing is removable.** No way to detach a party or delete a tenancy; corrections to
+  anything other than a lease field are a manual database task until an admin screen owns
+  them.

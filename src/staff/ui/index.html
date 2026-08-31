@@ -162,7 +162,8 @@
         font-size: var(--text-sm);
         color: var(--color-text-muted);
       }
-      .field input {
+      .field input,
+      .field textarea {
         min-height: var(--size-control-ops);
         padding-inline: var(--space-3);
         border: var(--size-hairline) solid var(--color-field-line);
@@ -171,7 +172,8 @@
         color: var(--color-text);
         font: inherit;
       }
-      .field input:focus-visible {
+      .field input:focus-visible,
+      .field textarea:focus-visible {
         outline: var(--size-focus) solid var(--color-accent);
         outline-offset: var(--size-hairline);
       }

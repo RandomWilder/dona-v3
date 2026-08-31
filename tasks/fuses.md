@@ -82,6 +82,23 @@ clauses' own words. Deleting the objects and the chunks would leave the lease's 
 readable in a third table. Four things now, and a deletion path (week 6) has to know about all
 four.
 
+**A fifth place, as of slice 13.2.** A review holds the value a human stands behind *and* the
+extracted value it was a statement about — so a confirmed field is a second copy of the twin's
+quotes, and a corrected one is the contract's words as an operator retyped them. It is
+deliberately not deleted when the extraction is replaced, which is what makes it a place of its
+own rather than a shadow of `occupancy_lease_facts`:
+
+```
+gs://dona-v3-staging-docs        the object
+gs://dona-v3-prod-docs           the object
+occupancy_documents              + occupancy_document_chunks   the row and the clause text
+occupancy_lease_facts            the term, the rent rule and the securities, quoted
+occupancy_lease_field_reviews    the same values again, as a person confirmed or corrected them
+```
+
+Five things, and the audit trail is deliberately none of them: `occupancy.reviewLeaseField`
+records the field and the decision and no value at all.
+
 ## 4. Model provider keys (slice 12.2)
 
 - Fired: 2026-08-26 · **closed 2026-08-26, both environments**
