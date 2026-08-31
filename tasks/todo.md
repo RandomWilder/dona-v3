@@ -291,7 +291,16 @@ clauses. Latency went 504-at-300s → 189s → 8.3s across the fix. Merged as
   line withdrawn, slice placed at 15.1 with a spike first) — **and OCR is not sufficient**. A
   five-page lease is almost certainly not the tender scheme, so it has no `נספח א׳`, and
   `clauses.ts`'s numbering and `twin.ts`'s annex-first selection are tuned to a scheme it does
-  not follow. That is its own slice and its own risk row.
+  not follow. That is its own slice and its own risk row. The framing for it — **schema over
+  templates**, build what a tenancy must know and let the model find it anywhere — is written
+  into ADR-0002 and becomes **its own ADR after the spike**, because the trade it turns on
+  (does a citation survive as `עמוד 3` when `נספח א׳ §5` cannot be recovered?) cannot be
+  settled before seeing OCR'd text.
+- **The scan carries handwriting, and that is the spike's real bar.** Not "is the printed
+  Hebrew readable" but **"does the output reveal what was changed by hand"** — a hand-struck
+  figure that OCR reads as printed returns the superseded term cleanly, with nothing to
+  indicate it is wrong. If the answer is no, detecting handwriting on a page and routing it to
+  a human is the honest product answer, and 13.2's review screen is where that lands.
 - **The admin cannot open a tenancy.** Buildings, units, people and phones have forms; a
   tenancy and its parties do not — so a flat created in the browser has no tenancy, and a
   document has nothing to hang off. Every tenancy in this system so far arrived by importer or

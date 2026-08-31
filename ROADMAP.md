@@ -178,7 +178,8 @@ nothing. The importer bar closed later the same day, when its standard was corre
 | Meta WhatsApp approval slow/denied | Med | Widget is the launch bar; adapter seam ready; started day 1 |
 | SMS deliverability in Israel | High | Test week 1 with real Israeli numbers; provider behind a thin adapter; signed-link fallback |
 | Lease PDFs are scans / messy | **Realised 2026-08-31** | ~~Manual field entry fallback~~ → **OCR, required** ([ADR-0002](docs/decisions/ADR-0002-ocr-is-required.md)). Measured, not foreseen: the second real lease is 5 pages, every one of them image-only, yielding 0 clauses |
-| A lease that is not the tender scheme | High | Open. The same second lease is 5 pages against the first's 38 — clause detection and the twin's annex-first selection are tuned to a scheme it does not follow. OCR is necessary and not sufficient (ADR-0002) |
+| A lease that is not the tender scheme | High | Open. The same second lease is 5 pages against the first's 38 — clause detection and the twin's annex-first selection are tuned to a scheme it does not follow. OCR is necessary and not sufficient. Direction: schema over templates, adaptive selection (ADR-0002) |
+| Hand-made changes to a printed contract | High | Open. The scanned lease carries handwritten notations and corrections. OCR that misses a strike-through returns the superseded term cleanly — wrong with no signal. Spike measures it; fallback is routing pages with handwriting to human review (ADR-0002) |
 | Hebrew answer quality below bar | High | Golden set from day 1; prefer extracted structured fields over free retrieval; escalate more, invent never |
 | Pilot data arrives late | Med | Weeks 2–3 run on a realistic seeded building; importer makes swap-in a one-hour job |
 | OpenAI outage / cost spike | Med | Kill switches degrade to callback collection; budget caps + model ids in config |

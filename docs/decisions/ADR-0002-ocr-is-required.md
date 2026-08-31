@@ -77,9 +77,23 @@ this ADR records it so the OCR slice is not mistaken for a complete answer.
   argument and not a free pass.
 - **Money and latency per document**, on a path that already takes ~11 seconds to
   ingest and ~8 to extract.
-- **Accuracy is unknown.** Hebrew OCR on a scan of this quality may or may not
-  produce text that chunks into clauses at all. Nobody knows yet, and a slice
-  scoped before knowing would be an estimate wearing a plan.
+- **Accuracy is unknown, and the hard part is not the printed text.** The second
+  document carries **handwritten notations and hand-made corrections to the
+  printed text**. Three different problems are hiding under one word:
+
+  1. printed Hebrew from a scan — plausible;
+  2. handwritten Hebrew in the margins — considerably harder;
+  3. **hand corrections to printed clauses** — the dangerous one. OCR that reads
+     a struck-out figure and never notices the strike returns the *superseded*
+     term, cleanly, with no signal that anything is wrong. That is a wrong answer
+     wearing the shape of a right one, which is the failure this system's whole
+     citation discipline exists to prevent.
+
+  So the spike's bar is not "is the Hebrew readable". It is **"does the output
+  reveal what was changed by hand"** — and if it does not, the honest product
+  answer may be to detect handwriting on a page and route that page to a human
+  rather than to trust it. Slice 13.2's review screen is the natural home for
+  that, which is one more reason not to reorder the two.
 
 ## Alternatives considered
 
@@ -91,8 +105,59 @@ this ADR records it so the OCR slice is not mistaken for a complete answer.
   everything built after it depends on that regression net; displacing it to
   bring OCR forward by a week costs more than it buys.
 
+## The framing this slice is built under: schema over templates
+
+Recorded here because it is the lens the OCR slice should be scoped through, and
+**deferred as a decision** because it cannot honestly be made yet.
+
+The durable thing is **what a tenancy has to know** — term, rent, securities,
+notice periods, who pays for what. That is a property of the business. A contract
+is only where those answers happen to be written this time, and there will be as
+many layouts as there are landlords and lawyers. Building a reader per template
+is a treadmill; building the *schema* and letting the model find its fields
+wherever they sit is not.
+
+Most of this system already works that way. `internal/twin.ts`'s registry **is**
+that schema — five fields, each with a shape and a question, and a sixth costs an
+entry and a test rather than a migration. Two things are not:
+
+- **Chunking reads one scheme's numbering** (`1.`, `3.2`, `סעיף 5 –`, annex
+  headers). A lease numbered differently chunks worse; one with no numbering
+  chunks into nothing useful.
+- **Selection asks for `נספח א׳` by letter.** A document with no annex א gets
+  *zero clauses sent* — the twin comes back empty not because the model could not
+  find the term, but because it was never shown the pages.
+
+The direction is therefore: selection becomes **adaptive** — the cheap annex path
+where a document has one, the whole document where it does not — and chunking
+**degrades to pages** rather than to nothing. Context windows and per-token
+prices both make sending a whole lease unremarkable now.
+
+**What must not move:** the guarantee that a field points at text a human can
+check comes from the plumbing, not from the model. The model returns an id; a
+citation naming something that was never sent is rejected. That rule is what
+makes a wrong answer visible rather than plausible, and it survives.
+
+**What the spike has to settle before this becomes its own ADR:**
+
+1. **Is a page-level citation good enough?** If clause numbering cannot be
+   recovered from OCR'd text, a citation degrades from `נספח א׳ §5` to `עמוד 3`.
+   Slice 12.1's whole argument was that a citation should name a clause. Whether
+   that argument survives the trade is the crux, and it cannot be reasoned out in
+   advance of seeing what the text looks like.
+2. **Does the whole-document path change what leaves our infrastructure?** Today
+   the front page never reaches the model, because selection requires a clause
+   number and the front page has none. "Send everything" sends both parties'
+   names, ID numbers and phones. OCR already moves this ground by handing over
+   whole page images — but it is a decision that deserves its own line in
+   `SPEC.md` rather than arriving as a side effect of a better idea.
+
+Its own ADR, after the spike.
+
 ## Next
 
 A spike before the slice is scoped: run pages of the second lease through a
-candidate OCR path and read the Hebrew that comes back. It answers the accuracy
-question, names the processor, and gives 15.1 a slice with evidence behind it.
+candidate OCR path and read what comes back — the printed Hebrew, the margins,
+and above all whether a hand-made correction is visible in the output. It answers
+the accuracy question, names the processor, and gives the checkpoint a slice with
+evidence behind it rather than an estimate.
