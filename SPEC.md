@@ -54,6 +54,12 @@ One shape everywhere: `{ code, message, details? }`. Codes: `not_found` · `not_
 - Absolute tenant isolation enforced at the query layer (every read scoped by verified occupancy) — proven by tests that attempt to cross it.
 - PII never in logs; parameterized queries; validate all inputs at the edge; rate-limit public endpoints.
 - **Third parties that see tenant text are named here, not discovered later.** As of slice 12.2 lease clause text is sent to OpenAI to be embedded — a real contract's contents leaving our infrastructure. The consent basis is in the lease itself, which contemplates the landlord passing tenant data to third parties providing IT services (`docs/reference/lease-template-donadom.md`), and the same note's warning applies: worth knowing, and worth not exceeding. Any further processor gets a line here before it gets a call.
+- **A third place a credential lives, and the first outside Secret Manager (slice 14.1a).** The
+  golden set's retrieval cases embed real queries in CI, so `secrets.OPENAI_API_KEY` is set on the
+  `evals` job. It is deliberately **not** staging's key or prod's: those live in Secret Manager,
+  each readable by its own service account and nothing else (`tasks/fuses.md`, fuse 4), and a
+  CI-only key can be revoked without touching either environment. What it can reach is one
+  embedding endpoint and a lease fixture written by us — the repo has never held a real contract.
 - **The same processor, a second kind of call (slice 13.1).** Selected clause text now also goes to OpenAI *with a prompt*, to be read into structured fields rather than into vectors. No new company sees tenant text, and the consent basis is the one above — but a completion is a different act from an embedding, so it gets its line. What is sent is decided deterministically and is narrower than what is stored: only chunks that carry a clause number, which excludes the document's front page and therefore the names, ID numbers, phones and email printed on it.
 
 ## Status

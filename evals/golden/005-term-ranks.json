@@ -1,0 +1,10 @@
+{
+  "id": "term-ranks",
+  "title": "The end-of-term question retrieves the clause that states the term",
+  "input": { "message": "עד מתי חוזה השכירות?" },
+  "retrieval": {
+    "expectRef": "נספח א׳ §5",
+    "rankAtMost": 2,
+    "note": "Measured at rank 2 on 2026-09-01: the front-page chunk beats it, 0.358 to 0.454. That is the attractor hypothesis reproduced — an unciteable chunk of parties and addresses winning a question about the term. Slice 12.2 measured this question at 3rd of 8 on the real lease, distance 0.428."
+  }
+}

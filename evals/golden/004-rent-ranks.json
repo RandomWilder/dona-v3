@@ -1,0 +1,10 @@
+{
+  "id": "rent-ranks",
+  "title": "The rent question retrieves the clause that states the rent",
+  "input": { "message": "מה גובה דמי השכירות?" },
+  "retrieval": {
+    "expectRef": "נספח א׳ §10",
+    "rankAtMost": 2,
+    "note": "Measured at rank 1 on 2026-09-01, and ratcheted to 2 on purpose. Its lead over the front-page chunk is 0.008, and re-embedding the same text moves a distance by up to 0.006 — so a ratchet of 1 would be a coin flip in CI. One place of headroom against a flake, and 14.1b still has to reach 1 to prove a fix. Slice 12.2 measured this question at 5th of 8 on the real lease."
+  }
+}
