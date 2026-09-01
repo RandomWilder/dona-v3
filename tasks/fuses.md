@@ -99,6 +99,23 @@ occupancy_lease_field_reviews    the same values again, as a person confirmed or
 Five things, and the audit trail is deliberately none of them: `occupancy.reviewLeaseField`
 records the field and the decision and no value at all.
 
+**And a sixth place, which is not ours and cannot be emptied — measured 2026-09-01.** The
+contract's clause text has been sent to the model provider: all 211 indexed chunks were embedded,
+and **19 of them carry `ת״ז` or `תעודת זהות`** — the parties' full ID numbers, home addresses,
+mobile numbers and an email, inside `נספח ו׳ §1`, `נספח ו׳ §2` and `נספח י״ב`. `SPEC-occupancy.md`
+claimed this could not happen; the claim was never measured and is now withdrawn.
+
+```
+the model provider          19 indexed chunks carrying ת״ז, embedded -- unrecallable
+```
+
+**This one does not close by deleting anything**, which is what makes it different from the five
+above. What it needs is [ADR-0004](../docs/decisions/ADR-0004-personal-data-reaches-the-model-provider.md)'s
+three parts: redaction at the provider boundary **before week 4** puts a tenant on the other end
+of a model call; a **DPA with the provider**; and **disclosure to data subjects**. The last two are
+Asaf's and not the agent's — they are legal instruments, not code. Same trigger as this fuse's
+deletion deadline: phase-1 sign-off, when real tenants replace our mock data.
+
 ## 4. Model provider keys (slice 12.2)
 
 - Fired: 2026-08-26 · **closed 2026-08-26, both environments**
