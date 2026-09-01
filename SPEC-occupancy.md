@@ -471,6 +471,21 @@ would make a citation point at text no longer beside it.
 This is the one place in the module that deletes rows, and it is deliberate that it deletes
 only *derived* rows. Nothing a human wrote is removable here any more than it was in 11.2.
 
+**A re-read replaces everything derived from the document, which is chunks, embeddings *and*
+fields.** Slice 14.1c: the facts of `occupancy_lease_facts` are deleted in the same transaction
+and before the chunks they cite. They are derived data one level further out — a field is read
+*out of* a clause, and a re-read moves the text, so a fact kept across one is a citation
+pointing at nothing. `0013` said so in its own comment from the day it was written
+(*"re-ingesting a document deletes its chunks, which is why extraction is replaced with them
+rather than left pointing at text that has moved"*) and the code did not do it: `chunk_id` is
+`ON DELETE RESTRICT`, so between 13.1 and 14.1c **a document that had been extracted could not
+be ingested again at all** — the re-read failed as a raw `23503` and the operator saw a 500.
+
+**Reviews are untouched, and that is the point rather than an omission.** A review is the one
+row here that is not derived (13.2), and it has no foreign key to either the fact or the chunk
+— so it survives the re-read and reports `stands: false` until somebody extracts again. A
+re-read is exactly the event `stands` exists to describe.
+
 ### An incomplete lease says so, and keeps saying it
 
 Pages with no readable text are **counted, named and stored**, never dropped.

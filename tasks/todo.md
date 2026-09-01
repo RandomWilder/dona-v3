@@ -364,9 +364,76 @@ source *and* that nothing came back to cite. The instrument corrected its author
 the part worth keeping: two probes written as `none`/`policy` were wrong, and reading the output
 settled it rather than an argument — §7.4 does say entry needs coordinating in advance, and the
 entry procedure does answer *"what time exactly"* with *`נקבע לה חלון זמן ולא שעה מדויקת`*.
-**Not yet measured on the real lease**, and that is the gap that matters: every number is the
-8-page fixture's, where the 38-page contract had these questions at 5th and 3rd of 8. Evidence:
-`tasks/evidence/day-14-ranking-rule.md`.
+Merged as [#35](https://github.com/RandomWilder/dona-v3/pull/35) — `gate` and `evals` both green.
+Evidence: `tasks/evidence/day-14-ranking-rule.md`.
+
+> **Closed on the golden set, NOT on staging.** Every number is the 8-page fixture's, where the
+> 38-page contract had these questions at 5th and 3rd of 8. The staging re-measure is owed and is
+> **blocked by 14.1c below** — the real lease has extracted fields, and a document with fields
+> cannot currently be read again. Nothing on staging has exercised this slice yet.
+
+### Slice 14.1c — Let a lease be read again ☐
+> **Found 2026-09-01, immediately after 14.1b merged, while planning the staging verification.**
+> Not caused by 14.1b — it has been true since 13.1 — but it is what blocks 14.1b from being
+> proven on the real contract, so it goes first.
+
+**The defect, reproduced locally rather than suspected:**
+
+```
+ingest 1: 19 chunks, 16 indexed
+planted : one fact citing §1.1–1.3
+ingest 2: FAILED — update or delete on table "occupancy_document_chunks"
+          violates foreign key constraint "occupancy_lease_facts_chunk_id_fkey"
+```
+
+`replaceChunks` (`src/occupancy/internal/documents.ts`) deletes a document's chunks;
+`occupancy_lease_facts.chunk_id` is `ON DELETE RESTRICT` (`0013`). So **a document that has
+extracted fields cannot be ingested again** — and it fails as a raw driver error (`23503`), not
+as the kernel's error shape, so the operator sees an opaque 500.
+
+**Staging's real lease has `facts=5 · reviews=5`** (13.2's evidence), so pressing `קריאה מחדש`
+on it today throws. That is the button the 14.1b verification needs.
+
+**`0013`'s own comment already describes the behaviour the code lacks:** *"re-ingesting a document
+deletes its chunks, which is why extraction is replaced with them rather than left pointing at text
+that has moved."* The intent was written down; it was never implemented.
+
+- [x] `replaceChunks` deletes the document's `occupancy_lease_facts` **inside the same
+      transaction**, before the chunks — a fact is derived from a chunk, and a re-read moves the
+      text it cites, so keeping it would be a citation pointing at nothing
+- [x] **Reviews are untouched**, and this is the point rather than an omission: they have no
+      foreign key to the fact (13.2 built them that way on purpose), so `stands` simply goes false
+      until someone re-extracts. That is the mechanism 13.2 exists for, working
+- [x] A contract test that **ingests → extracts → ingests** and asserts the second ingest
+      succeeds, the facts are gone, and the review survives with `stands: false`. **It was written
+      first and it failed first** — as the raw `23503` the defect note predicted, from
+      `replaceChunks`, not as the kernel's error shape
+- [x] `SPEC-occupancy.md` says it, beside "Idempotent by replacement": re-reading a document
+      replaces everything derived from it — chunks, embeddings **and** fields
+
+**Done when:** a document that has been extracted can be ingested again, and its reviews survive.
+**Verify:** the new contract test, plus a re-ingest of the real lease on staging. · Size: S
+**First half done 2026-09-01, locally.** Red then green on the same test, and the whole gate
+behind it: typecheck clean · lint clean · `REQUIRE_POSTGRES=1 npm test` 495/495 with nothing
+skipped · `REQUIRE_EMBEDDINGS=1 npm run evals` 9/9. **The staging half is owed** and is the
+re-ingest of the real lease — which is step 2 of the verification below, so the two are one press.
+
+> **The staging verification 14.1b is owed, in order — ~20 minutes, not a slice.** Do it the moment
+> 14.1c is merged, before 14.2:
+>
+> 1. Confirm staging serves the new revision (boot line / `/health` version); `0016` runs at boot.
+> 2. Re-read the real lease from the unit screen. Expect the chunk count to move — the annex-marker
+>    fix and the two-column pass both change boundaries — and `indexed` to be lower than `chunks`.
+> 3. Ask both 12.2 questions on that screen and **write the ranks down**: `מה גובה דמי השכירות?`
+>    → `נספח א׳ §10`, `עד מתי חוזה השכירות?` → `נספח א׳ §5`. They were 5th and 3rd of 8.
+> 4. Read `נספח א׳ §5` on the chunks page: is the sentence whole, or still braided?
+> 5. `npm run guidance` over the tunnel (`docs/runbook-deploy.md`), then ask an office-hours
+>    question and a nonsense one, and read all three outcomes.
+> 6. Re-extract the twin, since 14.1c will have cleared its fields, and check the five reviews
+>    come back standing.
+>
+> **If the two ranks do not move on the real lease, that is a finding and not a failure** — it goes
+> to 14.2's cases and hybrid retrieval becomes its own slice. Do not patch 14.1b.
 
 ### Slice 14.2 — Golden set v1 in CI ☐
 > **The harness is 14.1a's; this slice is the cases.** **Three** kinds exist as of 14.1b —
@@ -405,7 +472,7 @@ entry procedure does answer *"what time exactly"* with *`נקבע לה חלון 
   reached rank 1 on the 8-page mock lease after the front page stopped being indexed. The real
   38-page lease had them at 5th and 3rd of 8, and it has 221 chunks to the fixture's 19 — removing
   one attractor is necessary there and may well not be sufficient. **Re-ingest on staging and
-  re-measure before believing this generalises**; if it does not, hybrid retrieval is the named
+  re-measure before believing this generalises — which needs 14.1c first**; if it does not, hybrid retrieval is the named
   next candidate and it is its own slice, not a patch to this one.
 - **A question about a *different building* is grounded in our own clause.**
   `כמה עולה מנוי לחדר הכושר במתחם השכן?` shares three real content words with `נספח ב׳ §5`, and a
