@@ -2203,6 +2203,55 @@ describe('occupancy contract', () => {
         });
       });
 
+      it('lets a document that has been read into fields be read again', async (t) => {
+        await withPool(t, async (pool) => {
+          const { occupancy, document, facts, store } =
+            await extractedLease(pool);
+          await occupancy.reviewLeaseField(
+            {
+              documentId: document.id,
+              field: 'term',
+              factId: factOf(facts, 'term').id,
+              decision: 'confirmed',
+            },
+            actor,
+          );
+          const before = await occupancy.listChunks(document.id);
+
+          // A re-read deletes the document's chunks, and a fact cites one with
+          // `ON DELETE RESTRICT` (0013). Until 14.1c that made the second
+          // ingest die as a raw `23503` -- so a lease anybody had extracted
+          // could never be read again, which is every lease that matters.
+          const { occupancy: again } = world(
+            pool,
+            fixedClock(new Date('2026-09-16T09:00:00Z')),
+            store,
+            pdfOf([...twinLease, pdfPage(3, ['5. הודעה מוקדמת של 60 יום.'])]),
+            createFakeEmbedder(embeddingColumnDimensions),
+          );
+          const reread = await again.ingestDocument(
+            { documentId: document.id },
+            actor,
+          );
+          assert.equal(reread.chunks, before.length + 1);
+
+          // The facts went with the chunks, in the same transaction. A field
+          // is derived from a clause, and the text it cited has moved -- so
+          // keeping it would be a citation pointing at nothing.
+          assert.deepEqual(await again.listLeaseFacts(document.id), []);
+
+          // The review is not derived data and has no foreign key to either
+          // (13.2, on purpose), so it survives -- and says it no longer stands
+          // until somebody extracts again. That is the mechanism 13.2 exists
+          // for, working, rather than an omission here.
+          const reviews = await again.listFieldReviews(document.id);
+          assert.equal(reviews.length, 1);
+          assert.equal(reviews[0]?.stands, false);
+          const kept = reviews[0]?.reviewedValue as { capYears: number };
+          assert.equal(kept.capYears, 10);
+        });
+      });
+
       it('keeps one review per field, however often it is reviewed', async (t) => {
         await withPool(t, async (pool) => {
           const { occupancy, document, facts } = await extractedLease(pool);

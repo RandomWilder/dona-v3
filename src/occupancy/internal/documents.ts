@@ -970,6 +970,20 @@ export function createDocuments(deps: DocumentDeps): Documents {
       indexed.map((chunk, at) => [chunk.ordinal, embedding.vectors[at]]),
     );
     await inTransaction(pool, async (client) => {
+      // The extracted fields go first, and by their own DELETE rather than by a
+      // rule on the chunk: `occupancy_lease_facts.chunk_id` is ON DELETE
+      // RESTRICT (0013), so before 14.1c a document that had been read into
+      // fields could not be read again at all -- the re-read died as a raw
+      // 23503 and the operator saw a 500. A fact is derived from a clause and a
+      // re-read moves the text, so keeping one would be a citation pointing at
+      // nothing. The reviews are deliberately not touched: they are the one row
+      // here nobody derived, they have no foreign key to the fact or the chunk
+      // (13.2), and `stands` goes false until somebody extracts again -- which
+      // is the mechanism 13.2 exists for rather than an omission.
+      await client.query(
+        'DELETE FROM occupancy_lease_facts WHERE document_id = $1',
+        [document.id],
+      );
       // The embeddings go with them, by ON DELETE CASCADE on the chunk: an
       // embedding is derived from a clause and is meaningless without it.
       await client.query(
