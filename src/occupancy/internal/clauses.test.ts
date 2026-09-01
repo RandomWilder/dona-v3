@@ -173,6 +173,116 @@ describe('clause chunking', () => {
     assert.doesNotMatch(text, /: 8\./);
   });
 
+  it('reads a two-column row whose corridor is narrower than a word gap', () => {
+    // Slice 14.1d, and the geometry is the real `נספח א׳`'s rather than a
+    // fixture author's: values end at x=294, labels start at x=305, a corridor
+    // of **11 points** where 14.1b demanded 35.7 -- and on that page of the
+    // contract 17 of every 100 gaps between two ordinary words are wider than
+    // 11pt, so no width threshold can tell the two apart.
+    //
+    // The braid is the real one too: the label's lines and the value's lines
+    // sit on *different* baselines, eight points apart, so read line by line
+    // they interleave as [label 1] [value 1] [label 2] [value 2].
+    const narrowLabel = (y: number, text: string) => run(305, y, text, 225);
+    const narrowValue = (y: number, text: string) => run(70, y, text, 224);
+    const { chunks } = chunkLease([
+      page(14, [
+        spanning(40, 'נספח א׳ — פרטי העסקה'),
+        narrowLabel(90, 'סעיף 5 – תקופת השכירות'),
+        narrowValue(98, 'החל מיום 1 במרץ 2026 ועד יום 28 בפברואר 2029.'),
+        narrowLabel(140, 'תקופות הארכה נוספות ומועד'),
+        narrowValue(148, 'שתי אופציות בנות 24 חודשים כל אחת,'),
+        narrowLabel(156, 'ההודעה על מימושן'),
+        narrowValue(164, 'בהודעה מראש של תשעים ימים.'),
+        narrowLabel(190, 'תקרת תקופת השכירות הכוללת'),
+        narrowValue(198, 'עשר שנים ממועד המסירה.'),
+        spanning(
+          210,
+          'הצדדים מצהירים כי קראו את ההסכם, הבינו את תוכנו ואת מלוא התחייבויותיהם.',
+        ),
+      ]),
+    ]);
+    const clause = chunks.find((chunk) => chunk.clauseRef === 'נספח א׳ §5');
+    assert.ok(clause);
+    // The label that wrapped is one sentence again, with its own value attached
+    // and nothing pushed through the middle of it.
+    assert.match(
+      clause.text,
+      /תקופות הארכה נוספות ומועד ההודעה על מימושן: שתי אופציות בנות 24 חודשים/,
+    );
+    // And the braid itself, named the way the day-14 evidence draws it: a value
+    // line standing between the two halves of a label.
+    assert.doesNotMatch(clause.text, /ומועד\n/);
+    assert.doesNotMatch(clause.text, /\nההודעה על מימושן/);
+  });
+
+  it('does not read a clause-numbering margin as a column', () => {
+    // What persistence alone would have broken, and the measurement that set
+    // `minColumnChars`: every body page of the real contract carries a corridor
+    // that satisfies every other test -- ~15pt wide, with not one row crossing
+    // it, holding all the way down the page. It is the margin the clause
+    // numbers sit in: 14pt of width and six characters of text. Read as a table
+    // it would bind each number to its own line as a label, and a page of prose
+    // would come back as a table of contents.
+    const number = (y: number, text: string) => run(505, y, text, 25);
+    const { chunks } = chunkLease([
+      page(3, [
+        number(60, '8.'),
+        line(60, 'ביטוח ואחריות'),
+        number(90, '8.1.'),
+        line(
+          90,
+          'השוכר יבטח את תכולת הדירה בפוליסה בת תוקף לכל תקופת השכירות.',
+        ),
+        number(120, '8.2.'),
+        line(120, 'המשכיר יבטח את מבנה הבניין ואת הרכוש המשותף בלבד.'),
+        number(150, '8.3.'),
+        line(150, 'כל צד יישא בהשתתפות העצמית של הפוליסה שלו.'),
+        number(180, '8.4.'),
+        line(180, 'אין באמור כדי לגרוע מאחריות המשכיר על פי כל דין.'),
+      ]),
+    ]);
+    const text = chunks.map((chunk) => chunk.text).join('\n');
+    assert.match(text, /8\.1\. השוכר יבטח/);
+    // A number bound as a label to the sentence beside it is the failure.
+    assert.doesNotMatch(text, /8\.\d\.:/);
+    // And each sub-clause still starts its own clause rather than folding into
+    // the parent, which is what the mis-read costs downstream.
+    assert.deepEqual(
+      chunks.map((chunk) => chunk.clauseRef),
+      ['§8.1–8.4'],
+    );
+  });
+
+  it('does not take a page with one stub column for a table', () => {
+    // The defect this rule was measured against, and it is not hypothetical:
+    // 14.1b's width test read a page of the real contract as a table on a
+    // corridor with a 65pt column of 45 characters beside it. Two annex
+    // headings on that page were swallowed into the merged text, and every
+    // clause on the ten pages after it was then cited under the wrong annex.
+    const stub = (y: number, text: string) => run(70, y, text, 65);
+    const body = (y: number, text: string) => run(150, y, text, 340);
+    const { chunks } = chunkLease([
+      page(27, [
+        body(60, 'נספח ט׳ — טופס דיווח תקלה'),
+        stub(60, 'עמוד 27'),
+        body(90, 'נספח י׳ — כתב ויתור'),
+        stub(90, 'טופס 12'),
+        body(120, 'נספח י״א — נוהל תחזוקה'),
+        stub(120, 'גרסה 4'),
+        body(150, '1. הודעה על תקלה תימסר למוקד השירות בכתב או בטלפון.'),
+        body(180, '2. מוקד השירות יפתח קריאה וימסור לשוכר את מספרה.'),
+        filler(210),
+      ]),
+    ]);
+    // All three annexes are still there, and the clauses after them belong to
+    // the last one rather than to the first.
+    assert.deepEqual(
+      chunks.map((chunk) => chunk.clauseRef),
+      ['נספח ט׳', 'נספח י׳', 'נספח י״א', 'נספח י״א §1', 'נספח י״א §2'],
+    );
+  });
+
   it('carries the annex into the reference, because numbering restarts in each', () => {
     const { chunks } = chunkLease([
       page(1, [

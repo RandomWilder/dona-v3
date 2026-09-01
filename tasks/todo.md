@@ -372,13 +372,18 @@ Evidence: `tasks/evidence/day-14-ranking-rule.md`.
 > **blocked by 14.1c below** — the real lease has extracted fields, and a document with fields
 > could not be read again. 14.1c closed that on 2026-09-01.
 >
-> **The re-measure is now blocked again, by 14.1d, and this is a finding rather than a delay.**
+> **The re-measure was then blocked again, by 14.1d, and that was a finding rather than a delay.**
 > The re-ingest ran and two of the verification's six steps are answered: the chunk count moved
-> (221 -> 212, indexed 211), and `נספח א׳ §5` **is still braided** — 14.1b's two-column fix holds
+> (221 -> 212, indexed 211), and `נספח א׳ §5` **was still braided** — 14.1b's two-column fix held
 > on the fixture and not on the real annex, whose corridor is 11pt against a 35.7pt threshold.
-> **Ranking these two questions now would measure retrieval over scrambled text**, so steps 3-5
-> wait for 14.1d rather than producing numbers that look like evidence. One of 14.1b's six bullets
-> is therefore **not proven on the real contract**; the other five stand.
+> **Ranking these two questions then would have measured retrieval over scrambled text**, so steps
+> 3-5 waited for 14.1d rather than producing numbers that look like evidence. One of 14.1b's six
+> bullets was therefore **not proven on the real contract**; the other five stand.
+>
+> **14.1d closed that locally on 2026-09-01, and the press below is what remains.** Two things to
+> expect beyond the six steps: the chunk count going 212 -> 221, and the citations on pages 27-36
+> changing from `נספח ט׳` to `נספח י״א` — 14.1d's unplanned finding, and a correction rather than
+> a drift.
 
 ### Slice 14.1c — Let a lease be read again ☑
 > **Found 2026-09-01, immediately after 14.1b merged, while planning the staging verification.**
@@ -484,21 +489,54 @@ gaps >= 11.0 pt : 17 of 100     <- the corridor is inside the word-gap distribut
 gaps >= 35.7 pt : 2 of 100
 ```
 
-- [ ] **Width alone cannot separate a corridor from a word gap on this page, and the slice may not
+- [x] **Width alone cannot separate a corridor from a word gap on this page, and the slice may not
       pretend otherwise.** The candidate signal is *vertical persistence* — a real corridor falls at
       the same x across many baselines, a wide word gap does not — but it is a candidate, not the
       decision: measure first, the way 14.1a measured before 14.1b changed anything
-- [ ] `columnGapOf` is shared with `joinRow`, which uses it to tell a word gap from a column gap.
+- [x] **Persistence was measured and it is not sufficient**, which is the finding that shaped the
+      rule. Six pages of ordinary prose carry a corridor that no row crosses and that holds all the
+      way down the page — the margin the clause numbers sit in. What separates it from the annex is
+      not the corridor at all but **what stands beside it**: those margins are 8–14pt wide holding
+      4–30 characters, the annex's columns are 109pt and 261pt holding 101–1,073. So the rule asks
+      *is this a column* — a tenth of the page wide, 60 characters in it, at most two rows crossing
+- [x] `columnGapOf` is shared with `joinRow`, which uses it to tell a word gap from a column gap.
       Whatever replaces it has to keep one page from being two columns for one caller and one
-      column for the other — the property the shared constant exists to hold
-- [ ] The fixture gets an annex with a **narrow** corridor, because the current one is why this
-      passed: `evals/fixtures/mock-lease.ts`'s annex has a wide corridor and the real one does not
-- [ ] A test that pins **every page of prose is read exactly as before** — 14.1b's guarantee, which
-      this must not spend
+      column for the other — the property the shared constant exists to hold. **Kept structurally
+      rather than numerically:** `columnGapOf` stays exactly as it is and stays `joinRow`'s alone,
+      and once a page is split no baseline reaches `joinRow` carrying items from both columns — so
+      there is no corridor left for the two of them to disagree about
+- [x] The fixture gets an annex with a **narrow** corridor, because the current one is why this
+      passed: `evals/fixtures/mock-lease.ts`'s annex has a wide corridor and the real one does not.
+      Now an 11pt corridor with cells that wrap onto different baselines, and it **reproduces the
+      braid on the old code** — the fixture's acceptance bar, met the way 12.2's was
+- [x] A test that pins **every page of prose is read exactly as before** — 14.1b's guarantee, which
+      this must not spend. Three new tests, and the guarantee proven at scale by running the whole
+      38-page contract through both chunkers and comparing every chunk as
+      `(citation, pages, length, sha256)`: **41 page-groups identical, 27 changed** — the annex, and
+      the ten pages of §5 below
 - [ ] Re-ingest on staging and read `נספח א׳ §5` back out of the database, not off the screen
 
 **Done when:** `נספח א׳ §5` reads as one whole sentence on the real contract.
 **Verify:** the chunk's text read back from staging's database. · Size: M
+**The local half is met and measured; the staging press is owed.** The braid is gone, and it is
+reported as what it is rather than as a look at the text: walking `נספח א׳ §5` from start to end,
+the alternation between the two columns goes **`LVLVLVVVVVVV` → `LLLVVVVVVVVV`** — the label's
+three pieces contiguous, its values after them, 10 lines to 2. `§3.2` goes 2 alternations to 1.
+**`§10` goes 5 to 3 and is not clean**, which is carried rather than claimed. Gate whole:
+typecheck clean · lint clean · `REQUIRE_POSTGRES=1 npm test` 498/498 nothing skipped ·
+`REQUIRE_EMBEDDINGS=1 npm run evals` 9/9 with both ranking cases still at rank 1 through the
+fixture's new geometry. Evidence: `tasks/evidence/day-14-columns.md`.
+
+> **The slice found a live defect it was not looking for, and it is the larger half.**
+> **Ten pages of the real contract have been cited under the wrong annex since 14.1b merged.**
+> Page 27 carries three annex headings and a 65pt stub column; 14.1b's width test read it as a
+> table on a 39.6pt corridor, merged the headings into the page's text, and every clause from
+> page 27 to 36 then inherited `נספח ט׳` where the document says `נספח י״א`. Measured against the
+> pre-14.1b chunker, which reads them correctly: `chunks pre 221 · 14.1b 212 · 14.1d 221`. It is
+> **live on staging** — 14.1c's re-ingest wrote those 212 chunks — and day 13's twin cited
+> `נספח י״א` clauses that a re-extraction today would name `נספח ט׳`. Closed by the same rule and
+> pinned by a test built to that page's shape. It was invisible to every test in the repo because
+> no fixture had a page shaped like that one, which is the same gap 14.1b's own fixture had.
 
 ### Slice 14.2 — Golden set v1 in CI ☐
 > **The harness is 14.1a's; this slice is the cases.** **Three** kinds exist as of 14.1b —
@@ -530,6 +568,22 @@ gaps >= 35.7 pt : 2 of 100
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 14 (fourth pass)
+
+> Both came out of 14.1d, measured on the real contract. Evidence:
+> `tasks/evidence/day-14-columns.md`.
+
+- **`נספח א׳ §10` is still partly braided.** The rent clause goes from 5 alternations between the
+  two columns to 3, where `§5` goes from 5 to 1 and `§3.2` from 2 to 1. It is not a different
+  defect — it is the same one on a row whose value cell spans a page break — and it is the clause
+  the twin reads for the rent, so it belongs with **14.2's** cases rather than in a second patch
+  to the geometry. Do not tune the cell threshold on this one observation.
+- **A two-column table with fewer than 60 characters of labels is read as prose**, and that is the
+  heuristic's stated price rather than an oversight. The floor is what keeps a clause-numbering
+  margin from being a column, and it was measured with 45 characters on the losing side and 101 on
+  the winning one. A small table falls back to 12.1's reading — the value bound to the label on its
+  own baseline — so the failure direction is the old one and not a new one.
 
 ## Carried in from day 14 (third pass)
 

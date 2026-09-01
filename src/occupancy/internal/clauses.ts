@@ -334,12 +334,47 @@ function median(values: number[]): number {
 // corridor between the columns, assemble each column into *cells* rather than
 // rows, and give each label the value cell that sits beside it.
 
-// How far apart two columns have to be. Same measure `joinRow` uses to tell a
-// word gap from a column gap, so one page cannot be two columns for one of them
-// and one column for the other.
+// How far apart two runs have to be, *inside a line*, to be a label and a value
+// rather than two words. `joinRow`'s measure, and only `joinRow`'s: slice 14.1d
+// took it out of the page split, because on the real annex a corridor is 11pt
+// and 17 of every 100 word gaps on that page are wider than that. What it used
+// to hold -- that a page cannot be two columns for one caller and one column for
+// the other -- `splitColumns` now holds structurally: once a page is split, no
+// baseline reaches `joinRow` carrying items from both columns, so there is no
+// corridor for the two of them to disagree about.
 function columnGapOf(pageWidth: number): number {
   return Math.max(pageWidth * 0.06, 30);
 }
+
+// What makes a column a column, rather than the margin a clause number sits in.
+//
+// Measured over the whole 38-page contract (slice 14.1d, and the numbers are in
+// tasks/evidence/day-14-columns.md). Every page of the body has a corridor that
+// passes every other test -- 14.6pt wide with not one row crossing it, holding
+// all the way down the page -- and it is the numbering margin: a column 8 to
+// 14pt wide with 4 to 30 characters in it. The annex's columns are 109pt and
+// 261pt wide with 101 and 543 characters.
+//
+// The character floor is the one that decides, and it is set at 60 rather than
+// in the middle of that gap because of the page these two constants were nearly
+// wrong about: one body page carries a margin 65pt wide holding 45 characters,
+// which the width test admits. Read as a table it merged nine sub-clauses into
+// one chunk cited by their parent -- the failure this slice exists to remove,
+// arriving from the other direction.
+const minColumnSpan = 0.1;
+const minColumnChars = 60;
+
+// A corridor narrower than this is two runs that nearly touch. It is a floor and
+// not a signal: the deciding is done by the two constants above and by the rows
+// that cross, because width is what 14.1b asked for and what did not generalise.
+const minCorridor = 4;
+
+// A heading or a line of prose legitimately lies across the corridor -- `נספח א׳`
+// opens with its own title and closes with a paragraph. Two of them, counted in
+// *rows*: 14.1b counted crossing text runs and allowed a quarter of the page's,
+// which on a body page is dozens of lines of prose lying across the "corridor"
+// it then accepted.
+const maxCrossingRows = 2;
 
 interface ColumnSplit {
   /** The column a reader reads first: the right one, in a Hebrew document. */
@@ -353,25 +388,25 @@ interface ColumnSplit {
 
 // Whether this page is a two-column table, and where the corridor is.
 //
-// Deliberately hard to satisfy. A page of prose that happens to carry one wide
-// gap must not be re-read as a table, so a split has to have real columns on
-// both sides, a corridor at least as wide as a column gap, and almost nothing
-// crossing it. Anything else -- three columns, a ragged layout, one column --
-// returns null and the page is read exactly as it was before this existed.
+// Deliberately hard to satisfy, and 14.1d changed *what* is hard about it. A
+// page of prose that happens to carry one wide gap must not be re-read as a
+// table -- but neither may a page whose corridor is narrower than a word gap be
+// read as prose, which is what the real `נספח א׳` was. So the question is no
+// longer how wide the corridor is: it is whether the corridor holds down the
+// page, and whether what stands on either side of it is a column at all.
+// Anything else -- three columns, a ragged layout, one column and a numbering
+// margin -- returns null and the page is read exactly as it was before this
+// existed.
 function splitColumns(page: PdfPage): ColumnSplit | null {
   const items = page.items.filter((item) => item.text.trim().length > 0);
   if (items.length < 6) {
     return null;
   }
-  const gap = columnGapOf(page.width);
-  // A heading or a line of prose legitimately crosses the corridor -- `נספח א׳`
-  // opens with its own title and closes with a paragraph, so two is the floor
-  // rather than the exception. Past a quarter of the page there is no corridor.
-  const maxCrossing = Math.max(2, Math.floor(items.length * 0.25));
+  const rows = groupByBaseline(items);
 
   let best: ColumnSplit | null = null;
   let widest = 0;
-  for (const candidate of items.map((item) => item.x)) {
+  for (const candidate of new Set(items.map((item) => item.x))) {
     const left: PdfTextItem[] = [];
     const right: PdfTextItem[] = [];
     const spanning: PdfTextItem[] = [];
@@ -384,13 +419,25 @@ function splitColumns(page: PdfPage): ColumnSplit | null {
         spanning.push(item);
       }
     }
-    if (left.length < 3 || right.length < 3 || spanning.length > maxCrossing) {
+    if (left.length < 3 || right.length < 3) {
+      continue;
+    }
+    // Persistence, and it is measured in rows on purpose: one line of prose
+    // lying across the corridor is a page of prose, however few runs it is made
+    // of.
+    const crossingRows = rows.filter((row) =>
+      row.some((item) => item.x < candidate && item.x + item.width > candidate),
+    ).length;
+    if (crossingRows > maxCrossingRows) {
       continue;
     }
     const corridor =
       Math.min(...right.map((item) => item.x)) -
       Math.max(...left.map((item) => item.x + item.width));
-    if (corridor < gap || corridor <= widest) {
+    if (corridor < minCorridor || corridor <= widest) {
+      continue;
+    }
+    if (!isColumn(left, page.width) || !isColumn(right, page.width)) {
       continue;
     }
     widest = corridor;
@@ -407,6 +454,23 @@ function splitColumns(page: PdfPage): ColumnSplit | null {
     };
   }
   return best;
+}
+
+// Whether these items are a column of a table or the margin a clause number
+// lives in. Both are vertical, both persist down the page, and only one of them
+// holds text: the distinction is width and content, not position.
+function isColumn(items: PdfTextItem[], pageWidth: number): boolean {
+  const span =
+    Math.max(...items.map((item) => item.x + item.width)) -
+    Math.min(...items.map((item) => item.x));
+  if (span < pageWidth * minColumnSpan) {
+    return false;
+  }
+  const characters = items.reduce(
+    (total, item) => total + item.text.trim().length,
+    0,
+  );
+  return characters >= minColumnChars;
 }
 
 // One cell of a column: the lines of one table row, joined back into the
