@@ -579,10 +579,39 @@ error would confirm the tenancy exists, which is an isolation leak wearing an er
 
 Unaudited here, as this module's other reads are. Its callers audit their own use.
 
+### Measured, slice 14.1a: ranking is not ordered, and a refusal cannot be a distance cutoff
+
+`searchClauses` is unchanged by 14.1a. What that slice added is the instrument that measures it,
+and three findings that constrain what 14.1b may do. Full numbers in
+`tasks/evidence/day-14-ranking.md`.
+
+**A long heterogeneous chunk is a universal attractor, and this is now reproduced rather than
+suspected.** On an independent 19-chunk fixture, the front page — parties, ID numbers, a phone, an
+email, two addresses, a parcel number — is in the top 3 for half the probes, on questions with
+nothing to do with any of it. It **beats the clause that states the lease term** (`0.358` against
+`0.454`) and trails the rent clause by `0.008`. It reproduced at 19 chunks as well as at 221, so it
+is a property of the chunk and not of the corpus size.
+
+**That is a privacy finding as much as an accuracy one.** The chunk most likely to be retrieved for
+a vague question is the PII-densest text in the document, and it carries `clauseRef: null` — so
+nothing can cite it, and the only thing left to do with it is feed it to a model. Week 4 does
+exactly that with top hits.
+
+**No single distance threshold separates a right answer from a wrong one.** Across the same probes
+the worst answering clause scored `0.652` and the best non-answer `0.358` — an overlap of `0.294`,
+not a marginal one. A refusal of the form *"refuse when nothing scores below T"* is therefore not
+buildable on this signal, which is why 14.1 was split before any code was written: the refusal rule
+and the ranking defect are one problem.
+
+**Rank is stable across runs; distance is not.** Re-embedding the same text moves a distance by up
+to `0.006` (mean `0.001`, 48 paired observations) while leaving every rank identical. Anything that
+asserts on retrieval — a golden case, a threshold, a screen — must read order and not magnitude.
+
 ### What is deliberately not here
 
-- **Ranking across lease → policy → refuse.** Slice 14.1. This searches one tenancy's documents
-  and stops.
+- **Ranking across lease → policy → refuse.** Slice 14.1b. This searches one tenancy's documents
+  and stops — and as of 14.1a it is measured, so the change that lands there has a number to beat
+  rather than a feeling to satisfy.
 - **An answer.** `searchClauses` returns clauses, not prose. The agent that turns them into a
   Hebrew sentence with a citation is week 4, and SPEC.md rule 2 keeps it a client of this command.
 - **Re-embedding on a model change.** The table can hold two models at once; nothing orchestrates

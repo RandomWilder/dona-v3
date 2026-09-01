@@ -274,35 +274,78 @@ signed off on which of them are true.
 
 ## Day 14 (Thu) — Retrieval that refuses
 
-### Slice 14.1 — Guidance docs + the ranking rule ☐
-> **Arrives with a measured problem and a starting hypothesis, from 12.2.** Retrieval works and
-> is isolated; what it is not yet is *ordered*. Both of the owner's staging questions returned the
-> right clause outside the top two, and the same two chunks won both — see below. This slice is
-> where that becomes fixable, because it is the slice that builds the instrument.
+### Slice 14.1a — The ranking instrument ☑
+> **Split from 14.1 on 2026-09-01, before any code.** The original slice carried seven bullets
+> against PIPELINE.md §4's three, and the split is not only about size. **The refusal rule and the
+> ranking defect are one problem:** a refusal is a threshold — *no hit scores better than T* — and
+> 12.2 measured every distance between `0.35` and `0.51`, relevant and irrelevant alike. On a
+> signal that puts the right clause and the front page in the same band, **no such T exists.** So
+> the instrument is built and read first, and the refusal is designed from its numbers rather than
+> from a guess. Changing retrieval on one bad-looking result with no eval run is PIPELINE.md §9's
+> named anti-pattern.
 
-- [ ] Company policy documents through the same pipeline
-- [ ] Retrieval ranks **this occupancy's lease → policy → refuse**, in that order, and the refusal is a real answer rather than a fallback
-- [ ] An off-lease question returns **"unknown + escalate"**, never an invention
-- [ ] **The two questions from 12.2 are the first two golden cases**, with their measured answers:
-      `מה גובה דמי השכירות?` → `נספח א׳ §10` (was 5th of 8) and `עד מתי חוזה השכירות?` →
-      `נספח א׳ §5` (was 3rd of 8, distance `0.428`). A ranking change that does not move these is
-      not a fix
-- [ ] **The hypothesis to test first: long heterogeneous chunks are universal attractors.** The
-      front page and an annex cover — parties, dates, addresses, parcel numbers, boilerplate — won
-      *both* questions on unrelated topics. A chunk like that embeds near the centre of the space
-      and sits close to everything. Every distance in both result sets fell between `0.35` and
-      `0.51`, relevant and irrelevant alike, which is what "not discriminating" looks like from
-      outside. Candidate answers: hybrid retrieval (keyword + vector), tighter chunk sizing for
-      mixed-content pages, or down-weighting front matter — **measured, not guessed**
-- [ ] **A privacy decision, not only an accuracy one.** That front page is the PII-densest chunk
-      in the document — two names, two ID numbers, two phones, an email — and is currently the
-      most likely text retrieved for any vague question. Week 4's agent feeds top hits into a
-      prompt, so those hits reach the model. Decide it here deliberately rather than inherit it
-- [ ] **Two problems now, not one — the second arrived on 2026-08-31 and is measured.** The
-      extractor **oscillates** between answers across passes of the same document (see the carry
-      list). Ranking and stability are different failures with one shared instrument: the golden
-      set. A case that extracts twice and diffs belongs beside the two ranking cases, and the
-      `extraction.reasoning_effort` row is the first knob to try **after** it exists, not before
+- [x] `npm run evals` runs retrieval cases against a real indexed Hebrew corpus, a real embedder
+      and real pgvector — and gates in CI. Two kinds of case now, checked at parse so a file cannot
+      be both or neither; `REQUIRE_EMBEDDINGS=1` turns a skipped case into a red gate, as
+      `REQUIRE_POSTGRES=1` does for the durability suite
+- [x] **The two questions from 12.2 are the first two golden cases**, ratcheted — and **both rank
+      better on the fixture than on the real lease** (1st and 2nd, against 5th and 3rd). The
+      fixture is 8 pages against 38 and its topics are cleanly separated, so an answering clause
+      has less to compete with. Honest numbers for this corpus, and weaker than 14.1b needs
+- [x] **The attractor hypothesis is confirmed, and the threshold hypothesis is dead.** The front
+      page is top-3 for half the probes and **beats the clause stating the lease term** outright
+      (`0.358` to `0.454`). And the worst answering clause (`0.652`) scores worse than the best
+      non-answer (`0.358`) — **no single distance threshold separates right from wrong**, which
+      settles how 14.1b's refusal may not be built
+- [x] **A fourth finding, unplanned: rank is stable and distance is not.** Re-embedding the same
+      text moves a distance by up to `0.006` while leaving every rank identical. It justified the
+      "never assert on distance" rule after the fact, and it set the ratchets — `נספח א׳ §10`
+      measures rank 1 but is ratcheted to **2**, because an `0.008` lead inside a `0.006` jitter is
+      a coin flip in CI rather than a gate
+- [x] **The ADR the session was asked for**, on a question raised mid-slice:
+      [ADR-0003](../docs/decisions/ADR-0003-api-keys-stay-in-secret-manager.md) — keys stay in
+      Secret Manager, the admin gets the *reference* at week 5 and per-call cached reads at week 6
+
+**Done when:** the instrument reproduces 12.2's measured ranks on the fixture — or reports, with
+numbers, that it does not.
+**Verify:** `npm run evals` green in CI with the retrieval cases actually graded; the measurement
+in `tasks/evidence/day-14-ranking.md`. · Size: M
+**Closed 2026-09-01 — the bar, met as its second half.** The fixture does **not** reproduce 12.2's
+ranks and **does** reproduce their cause, which is the finding rather than a miss. The gate was
+proven in both directions: green at 5/5 with 19 chunks indexed, and red with
+`נספח א׳ §5 ranked 2, worse than the ratchet at 1` when tightened on purpose. Evidence:
+`tasks/evidence/day-14-ranking.md`.
+
+### Slice 14.1b — Guidance docs + the ranking rule ☐
+> **Arrives with a measured problem and a starting hypothesis, from 12.2, and now an instrument
+> from 14.1a.** Retrieval works and is isolated; what it is not yet is *ordered*.
+
+- [ ] Company policy documents through the same pipeline — as markdown we author rather than a
+      PDF, decided 2026-09-01: policy text is ours, not a customer's, so it belongs in the repo as
+      a reviewable file and cites by heading. Same *retrieval* pipeline, different front door, and
+      the gap is written into the spec rather than glossed. They are org-wide and not tenancy-
+      scoped, so they cannot live in `occupancy`'s tables without a nullable `tenancy_id` — the
+      exact shape SPEC-occupancy.md's "the filter is a column" forbids. `catalog` gains its first
+      tables, spec written first
+- [ ] Retrieval ranks **this occupancy's lease → policy → refuse**, in that order, and the refusal
+      is a real answer rather than a fallback. It composes occupancy and catalog, so it belongs in
+      `channel` — the module SPEC.md's map puts above both, and where week 4's agent will reach
+      for it as a tool
+- [ ] An off-lease question returns **"unknown + escalate"**, never an invention — and it may not
+      be a bare distance cutoff, which 14.1a measured out of the running. What is left: the clause
+      reference as a signal, keyword agreement, or a margin between first and second hit rather
+      than an absolute
+- [ ] **The ranking change itself.** 14.1a narrowed the candidates rather than leaving them a
+      list: the attractor is a real, reproducing chunk-level effect, so **down-weighting or
+      re-cutting front matter is the candidate with evidence behind it**, and hybrid retrieval is
+      the one to reach for if that is not enough. Its proof is the two ratchets going down —
+      `נספח א׳ §10` to 1 and `נספח א׳ §5` to 1. **Re-measure on staging's real lease before
+      believing it**: the fixture ranks cleaner than the contract does
+- [ ] **A privacy decision, not only an accuracy one — and 14.1a made it concrete.** The front
+      page is the PII-densest chunk in the document, it carries `clauseRef: null` so nothing can
+      ever cite it, and it **wins a question about the lease term**. The only thing downstream can
+      do with an uncitable hit is feed it to a model, which is exactly what week 4 does with top
+      hits. Decide it here deliberately rather than inherit it
 - [ ] **`נספח א׳`'s two-column layout is half solved** (12.1). `§5` interleaves the label column
       with the value column: the dates survive and are readable, the sentence is braided. It is
       the annex the twin reads, so a second pass belongs near this work
@@ -311,6 +354,12 @@ signed off on which of them are true.
 **Verify:** the golden set's refusal cases. · Size: M
 
 ### Slice 14.2 — Golden set v1 in CI ☐
+> **The harness is 14.1a's; this slice is the cases.** Two kinds exist as of 14.1a — behavioural
+> and retrieval — and `REQUIRE_EMBEDDINGS=1` already makes a skipped case a red gate in CI.
+
+- [ ] **The extractor's oscillation gets its case here** (carried from day 13, and previously
+      listed under 14.1): a case that extracts twice and diffs. The `extraction.reasoning_effort`
+      row is the first knob to try **after** that case exists, not before
 - [ ] ~30 real-style Hebrew cases: grounding · refusal-to-invent · **isolation** (asking about another tenant's lease must fail) · escalation triggers · tone
 - [ ] Assertions on **which tool was called and whether a citation is present**, not on final text (PIPELINE.md §6)
 - [ ] It gates merges — the same standing as a failing unit test
@@ -333,6 +382,17 @@ signed off on which of them are true.
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 14
+
+- **API keys are not admin-controllable, and the decision on that is made rather than deferred.**
+  Raised by Asaf during 14.1a and settled in
+  [ADR-0003](../docs/decisions/ADR-0003-api-keys-stay-in-secret-manager.md): the secret material
+  stays in Secret Manager permanently, and what an admin gets is the **reference** — a config row
+  holding a secret *name* — at week 5, plus per-call cached reads at week 6 so rotation stops
+  needing a revision roll. An admin form holding the value was considered and rejected: it would
+  put a key in the same table as `embedding.model`, and erase the one real boundary this system
+  has, that staging cannot read prod's key. Nothing in weeks 3-4 is blocked by it.
 
 ## Carried in from day 13 (second pass)
 
@@ -424,8 +484,13 @@ signed off on which of them are true.
   citation.
 - **Ingest is synchronous and now takes ~11 seconds** (12.2). A browser waits on it. Auto-ingest
   on upload wants the kernel's durable work (`work.ts`), which is its own slice.
-- **`staff`'s session sweep flaked a third time** (12.2's first gate run, passing the four after).
-  Still uncaptured, still wants `SPEC-staff.md` reasoning first.
+- **A fourth flake, and this one is not even attributed** (14.1a's first gate run: `pass 453,
+  fail 1`, then six clean runs). The failing test's name was **not captured** — the run was piped
+  through `grep` for the counts, which discarded the detail, and by the time a full log was kept
+  the failure was gone. It matches the session sweep's profile (one in five, unreproducible after)
+  and **that is a resemblance, not an identification**. The cheap fix is procedural and applies to
+  every gate run from here: write the full output to a file first, read the counts out of the
+  file. The sweep itself still wants `SPEC-staff.md` reasoning before code.
 
 ## Carried in from day 12
 

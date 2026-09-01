@@ -122,6 +122,22 @@ records the field and the decision and no value at all.
 - **The gotcha, written down once:** Cloud Run resolves `:latest` when an instance starts, not
   when a version is added. A rotated key reaches the service only when a new revision rolls.
 
+- **A third key, and the first one this system does not hold (slice 14.1a, 2026-09-01).** The
+  golden set's retrieval cases embed real queries, so CI needs a key of its own:
+  `secrets.OPENAI_API_KEY` on the `evals` job. It is **deliberately neither staging's nor
+  prod's** — those are per-secret grants readable by one service account each, and reusing one
+  would put an environment's credential in a place `infra/set-secret.sh` does not govern and
+  `gcloud` cannot rotate. A CI-only key with its own budget revokes on its own and takes nothing
+  with it.
+  - **Who owes what:** Asaf creates the key and sets the Actions secret; nobody else can. Until
+    it is set the `evals` job fails on `REQUIRE_EMBEDDINGS=1` — correct, and loud, rather than a
+    job that goes green having ranked nothing.
+  - **What it can reach:** one embedding endpoint, and a lease fixture written by us. The repo has
+    never held a real contract and this does not change that — `evals/fixtures/mock-lease.ts` is
+    invented, and the real lease stays where it is.
+  - **Cost, measured rather than assumed:** `text-embedding-3-large` at ~$0.13/1M tokens; a
+    19-chunk fixture plus a handful of queries is under 10k tokens, roughly **$0.001 per run**.
+
 ### Original request (history)
 - Fired: 2026-08-22 ✅
 - Status: **sent and acknowledged** — Dona Dom confirmed a set of all relevant documents will be sent, organized **by apartment**, phone numbers included.

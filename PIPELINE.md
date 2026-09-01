@@ -89,6 +89,34 @@ prod:    deploy → smoke → done   (rollback = re-deploy previous revision, on
 - **The feedback loop is the product**: production failure → becomes a golden case same day → CI blocks that failure forever → the correction is also the tenant-facing trust-repair flow. One mechanism, two payoffs.
 - Version the dataset in the repo (`evals/golden/*.json`); review diffs to it like code.
 
+**Two kinds of case, added in slice 14.1a.** A file carries exactly one of them, checked at parse:
+
+- a **behavioural** case (`expect`) — graded against an agent turn: which tool ran, was a clause
+  cited, was the answer refused, does the text contain a required substring.
+- a **retrieval** case (`retrieval`) — graded against the ordered result set `searchClauses`
+  returned for the question. It asserts `expectRef` (the clause that answers it) and
+  `rankAtMost` (where in the list it must appear).
+
+**`rankAtMost` is a ratchet, not a target.** It is set to the rank retrieval achieves *today*, so
+the gate blocks a regression from the first commit while staying green — and the proof that a
+later ranking change is a fix is that the number goes down. This is how "a ranking change that
+does not move these is not a fix" stops being a claim in a commit message and becomes something
+the runner enforces.
+
+**No assertion is ever on a distance.** Provider embeddings are not bit-identical between runs, so
+a committed distance is a gate that fails for weather. Distances are observations and live in the
+evidence files. Rank and order are what the gate reads.
+
+**What the retrieval cases need, and what happens when they cannot have it.** A database and an
+embedding key. Absent either, they *skip* — right on a clean clone, and a lie in CI, where the job
+would go green having ranked nothing. `REQUIRE_EMBEDDINGS=1` turns the skip back into a failure,
+exactly as `REQUIRE_POSTGRES=1` does for the durability suite. Both are set on the `evals` job.
+
+`npm run measure` is the instrument beside the gate: it prints every result set with distances,
+which chunks win unrelated questions, and whether any threshold separates a right answer from a
+wrong one. It decides what a ranking change should *be*; `npm run evals` decides whether it may
+merge.
+
 ## 7. Daily + weekly loop
 
 **Daily (per slice):**

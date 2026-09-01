@@ -58,6 +58,35 @@ jobs:
     name: evals
     runs-on: ubuntu-latest
 
+    services:
+      # The retrieval cases index a lease into pgvector and rank real queries
+      # against it, so this job needs the same engine the gate job runs.
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dona
+          POSTGRES_USER: dona
+          POSTGRES_PASSWORD: dona
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dona -d dona"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://dona:dona@127.0.0.1:5432/dona
+      REQUIRE_POSTGRES: '1'
+      # The other half of what a retrieval case needs. Without this the cases
+      # would *skip* and the job would go green having ranked nothing — the
+      # same lie REQUIRE_POSTGRES exists to prevent (src/kernel/pg-support.ts).
+      REQUIRE_EMBEDDINGS: '1'
+      # A CI-only key, deliberately not staging's or prod's: those live in
+      # Secret Manager and reach only their own service account
+      # (tasks/fuses.md, fuse 4). This one can be revoked on its own.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

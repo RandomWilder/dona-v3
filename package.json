@@ -16,7 +16,8 @@
     "import": "node src/import.ts",
     "reset": "node src/reset-data.ts",
     "start": "node src/serve.ts",
-    "evals": "node evals/run.ts"
+    "evals": "node --env-file-if-exists=.env evals/run.ts",
+    "measure": "node --env-file-if-exists=.env evals/measure.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

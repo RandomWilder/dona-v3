@@ -118,6 +118,7 @@ nothing. The importer bar closed later the same day, when its standard was corre
 - [ ] Guided diagnosis + **self-service gate**: agent walks the catalog how-to before any job is created; resolution closes the case as zero-touch. **Done when:** the water-heater-switch flow from the mockups runs.
 - [ ] **Deductible consent as a recorded event** (amount + clause + timestamp) before scheduling proceeds.
 - [ ] Admin **single intake queue**: classification chip, priority marker, building/unit, department filter, SLA timers vs config thresholds. **Done when:** an overdue item is visually loud.
+- [ ] **Settings screen for the config rows that already exist** — `embedding.model`, `extraction.model`, `extraction.reasoning_effort` have been rows with no screen since 12.2 (`kernel/config.ts` says so out loud). Add `embedding.api_key_secret` beside them: the admin points the system at a **secret name**, never at a key ([ADR-0003](docs/decisions/ADR-0003-api-keys-stay-in-secret-manager.md)). **Done when:** changing the embedding model needs no deploy.
 
 **Checkpoint demo:** fault in widget → gate attempt → consent → case sits in the queue with a ticking SLA.
 **Cut line:** SLA escalation actions (timers visible, escalation next week); photo diagnosis by vision model (store photos, human-readable only).
@@ -131,6 +132,7 @@ nothing. The importer bar closed later the same day, when its standard was corre
 - [ ] Tenant availability windows collected in-thread before the offer; on accept: visit scheduled, tenant gets proactive confirmation, vendor gets ICS attachment. (Calendly mirror deferred — the seam exists.)
 - [ ] `fulfillment`: vendor uploads evidence via the same signed page; tenant sign-off in thread closes the case; no-show → back to dispatch or exception.
 - [ ] Proactive status pushes wired for every state change (quiet hours from config).
+- [ ] **Secrets read per call with a short cache**, retiring the read at instance start. Closes the rotation gap fuse 4 calls "the gotcha": Cloud Run resolves `:latest` when an instance boots, so today a rotated key needs a revision roll ([ADR-0003](docs/decisions/ADR-0003-api-keys-stay-in-secret-manager.md)). **Done when:** adding a secret version takes effect without a deploy.
 
 **Checkpoint demo (milestone): full loop on staging with a friendly "vendor" (your second phone) — zero staff touches, everything audited.**
 **Cut line:** no-show automation (manual re-dispatch button suffices); vendor evidence upload (photo by SMS to staff as fallback).
