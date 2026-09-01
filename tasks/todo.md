@@ -460,7 +460,7 @@ page, so 14.1b's privacy rule fires on the real lease too. Merged as
 > **If the two ranks do not move on the real lease, that is a finding and not a failure** — it goes
 > to 14.2's cases and hybrid retrieval becomes its own slice. Do not patch 14.1b.
 
-### Slice 14.1d — The real annex's corridor is 11 points ☐
+### Slice 14.1d — The real annex's corridor is 11 points ☑
 > **Opened 2026-09-01 from 14.1c's staging read, with the cause measured rather than suspected.**
 > 14.1b closed the two-column braid against the 8-page fixture and it **does not hold on the real
 > contract**. This is the slice that was going to be "hybrid retrieval" and is not: retrieval is
@@ -514,18 +514,23 @@ gaps >= 35.7 pt : 2 of 100
       38-page contract through both chunkers and comparing every chunk as
       `(citation, pages, length, sha256)`: **41 page-groups identical, 27 changed** — the annex, and
       the ten pages of §5 below
-- [ ] Re-ingest on staging and read `נספח א׳ §5` back out of the database, not off the screen
+- [x] Re-ingest on staging and read `נספח א׳ §5` back out of the database, not off the screen
 
 **Done when:** `נספח א׳ §5` reads as one whole sentence on the real contract.
 **Verify:** the chunk's text read back from staging's database. · Size: M
-**The local half is met and measured; the staging press is owed.** The braid is gone, and it is
+**Closed 2026-09-01 — both halves.** The braid is gone, and it is
 reported as what it is rather than as a look at the text: walking `נספח א׳ §5` from start to end,
 the alternation between the two columns goes **`LVLVLVVVVVVV` → `LLLVVVVVVVVV`** — the label's
 three pieces contiguous, its values after them, 10 lines to 2. `§3.2` goes 2 alternations to 1.
 **`§10` goes 5 to 3 and is not clean**, which is carried rather than claimed. Gate whole:
 typecheck clean · lint clean · `REQUIRE_POSTGRES=1 npm test` 498/498 nothing skipped ·
 `REQUIRE_EMBEDDINGS=1 npm run evals` 9/9 with both ranking cases still at rank 1 through the
-fixture's new geometry. Evidence: `tasks/evidence/day-14-columns.md`.
+fixture's new geometry. **On staging**, `a7fcbd3` serving, the owner pressed `קריאה מחדש` and the
+real 38-page contract was read back out of the database rather than off the screen that wrote it:
+`chunks 221 (was 212) · indexed 220 · reviews 5`, and **`נספח א׳ §5` at 456 characters over 2
+lines** — the local measurement to the character, where it was 453 over 10, and the ten were the
+braid. Merged as [#38](https://github.com/RandomWilder/dona-v3/pull/38). Evidence:
+`tasks/evidence/day-14-columns.md`.
 
 > **The slice found a live defect it was not looking for, and it is the larger half.**
 > **Ten pages of the real contract have been cited under the wrong annex since 14.1b merged.**
@@ -537,6 +542,12 @@ fixture's new geometry. Evidence: `tasks/evidence/day-14-columns.md`.
 > `נספח י״א` clauses that a re-extraction today would name `נספח ט׳`. Closed by the same rule and
 > pinned by a test built to that page's shape. It was invisible to every test in the repo because
 > no fixture had a page shaped like that one, which is the same gap 14.1b's own fixture had.
+> **Confirmed corrected on staging in the same press:** `נספח י׳` and `נספח י״א` exist again, and
+> the 58 clauses on pages 27-37 are cited under `נספח י״א`.
+
+> **The twin is owed a re-extraction** — the re-ingest cleared its fields (`facts 0`), which is
+> 14.1c's rule working, and the five reviews survived and report superseded until someone
+> extracts. It is step 6 of the 14.1b verification below, not a defect of this slice.
 
 ### Slice 14.2 — Golden set v1 in CI ☐
 > **The harness is 14.1a's; this slice is the cases.** **Three** kinds exist as of 14.1b —

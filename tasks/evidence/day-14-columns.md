@@ -173,11 +173,48 @@ Both ranking cases still rank **1** with the annex in its new geometry
 (`נספח א׳ §10` at 0.490, `נספח א׳ §5` at 0.466), so the ratchets hold through the
 change rather than being moved to accommodate it.
 
-## 7. What is owed after this
+## 7. The staging press — the slice's stated Verify
 
-- **The staging press**, which is this slice's stated Verify: re-ingest the real
-  lease and read `נספח א׳ §5` back out of the database. Expect the chunk count to
-  go 212 → 221 and the `נספח ט׳` citations on pages 27–36 to become `נספח י״א`.
+Merged as [#38](https://github.com/RandomWilder/dona-v3/pull/38); staging serves
+`a7fcbd3` (`/health`: `{"ok":true,"version":"a7fcbd3","db":"up"}`). The owner
+pressed `קריאה מחדש` on the unit page and the screen moved 212 → 221 clauses.
+
+Read back over the runbook's Cloud SQL proxy, session pinned
+`default_transaction_read_only = on`:
+
+```
+document    : 01a0391c…   1,695,258 bytes · pages 38
+ingested_at : 2026-09-01T13:19:37.208Z
+chunks 221 (was 212) · indexed 220 · facts 0 · reviews 5
+
+נספח א׳ §5  p14 · 456 chars · 2 lines · 4 label bindings · searchable yes
+```
+
+**456 characters over 2 lines is the local measurement to the character** — it
+was 453 over 10 before, and the ten were the braid. The bar is met on the real
+contract and not only on a fixture.
+
+And the annex letters, which is the finding, corrected in the same press:
+
+```
+annex | chunks | pages          annex | chunks | pages
+א'    |      8 | 14-16          ט'    |      1 | 27-27
+ב'    |     27 | 16-18          י'    |      1 | 27-27
+ג'    |     10 | 18-20          י"א   |     58 | 27-37
+ז'    |     16 | 22-27          י"ב   |      7 | 37-38
+```
+
+`נספח י׳` and `נספח י״א` exist again, and the 58 clauses on pages 27–37 are
+cited under `נספח י״א` rather than swallowed into `נספח ט׳`. The one
+stored-not-indexed chunk is still the cover page, so 14.1b's privacy rule holds
+through the change.
+
+## 8. What is owed after this
+
+- **The twin has to be re-extracted** — `facts 0`, because 14.1c's rule clears a
+  document's fields when its text is replaced, working exactly as built. The five
+  reviews survived the re-read again and will report superseded until someone
+  extracts. That is step 6 of 14.1b's verification, not a defect.
 - **14.1b's staging verification**, still outstanding and now unblocked: the two
   ranks written down, `npm run guidance` over the tunnel, the three grounding
   outcomes read.
