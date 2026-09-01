@@ -414,8 +414,8 @@ in half with a value pushed through the middle of it. `נספח א׳ §5` is the
 it is worth a second pass rather than a carry line.
 
 **A baseline stops being a line on such a page.** `splitColumns` looks for a corridor: a vertical gap
-at least as wide as `joinRow`'s own column gap, with at least three lines on each side and almost
-nothing crossing it. Found, each column is assembled into **cells** rather than rows — lines a normal
+with at least three lines on each side and almost nothing crossing it — *and, until 14.1d, at least
+as wide as `joinRow`'s own column gap, which is the half the next section withdraws*. Found, each column is assembled into **cells** rather than rows — lines a normal
 line-height apart are one cell that wrapped, a bigger step down the page is the next row of the table
 — and each label takes the value cell beside it. Not found, the page is read exactly as it was
 before, which is every page of prose in the document.
@@ -424,6 +424,58 @@ before, which is every page of prose in the document.
 line's worth, because a one-line cell offers no line pitch to measure. The test that pins it builds
 the braid out of geometry and asserts it is gone; the document that decides whether it generalises is
 the real 38-page lease, re-ingested on staging.
+
+### The corridor is not measured by its width (slice 14.1d)
+
+The document decided, and it decided against the paragraph above. 14.1b found a corridor **by
+width** — at least as wide as `joinRow`'s own column gap — and that is the half that did not
+generalise. The real `נספח א׳`'s corridor is **11.0pt** against a 35.7pt demand, so the page was
+read line by line and `נספח א׳ §5` stayed braided: the citation right, and the sentence inside it
+cut into three pieces with body lines pushed between them — the worse half of the defect, because
+the clause looks citable.
+
+**And no width threshold can be the fix**, which is why this is a rule change and not a constant.
+On that same page 17 of every 100 ordinary gaps *between two words* are also ≥ 11pt: the corridor
+sits inside the word-gap distribution, so a threshold low enough to find it cuts sentences in half
+everywhere else.
+
+**So the rule asks what a column is instead of how far away it is.** A corridor is a column
+boundary when it persists down the page and when both sides are really columns:
+
+- **Almost no row crosses it** — at most two, which is the annex's own title and its closing
+  paragraph. Rows, not a fraction of the page's text runs: one line of prose lying across the
+  corridor disqualifies it however short it is, and 14.1b's fraction let a quarter of the page
+  cross before it objected.
+- **Each side is at least a tenth of the page wide and carries at least 60 characters.** This is
+  the test that keeps a page of prose out, and it is the one persistence alone cannot do: a body
+  page's clause-numbering margin is a corridor by every other measure — 14.6pt, not one row
+  crossing it, holding all the way down the page — and it is a column 14pt wide holding six
+  characters. Measured across the whole 38-page contract, every such margin is 8–14pt wide with
+  4–30 characters in it, and the annex's two columns are 109pt and 261pt wide with 101–151 and
+  543–1,073. The floor is 60 rather than the middle of that gap because of the page these two
+  constants were nearly wrong about: a body page carrying a 65pt margin of 45 characters, which
+  the width test admits and which, read as a table, merged nine sub-clauses into one chunk cited
+  by their parent.
+
+**What this heuristic gives up, stated.** A genuine two-column table with fewer than 60 characters
+of labels is read as prose. That is the reading it had before any of this existed — the value stays
+bound to the label on its own baseline (12.1) — so the failure direction is the old one and not a
+new one.
+
+**And the width rule was not merely failing to help — it was doing harm.** Measured over the same
+contract: 14.1b read four pages as tables, and on one of them the "column" beside the corridor was
+a 65pt stub. That page carries three annex headings; read as a table they were merged into its
+text, and **every clause on the ten pages after it was cited under the wrong annex** — `נספח ט׳`
+where the document says `נספח י״א`. A citation naming the wrong annex is the failure this module
+is built around, and it had been live since 14.1b merged. It is closed by the same rule, and pinned
+by a test built to that page's shape.
+
+**What became of the shared constant.** `columnGapOf` still tells a word gap from a column gap
+*inside a line*, and no longer decides whether a page is a table. The property it existed to hold —
+that one page cannot be two columns for one caller and one column for the other — is now held
+structurally instead of numerically: once a page is split, no baseline handed to `joinRow` carries
+items from both columns, so the two callers cannot disagree about a corridor `joinRow` is never
+shown.
 
 ### A heading is not a clause
 

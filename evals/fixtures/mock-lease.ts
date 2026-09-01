@@ -45,6 +45,69 @@ function page(number: number, lines: string[]): PdfPage {
   };
 }
 
+// The other shape נספח א׳ comes in, and the reason this fixture grew one in
+// slice 14.1d: a two-column label/value table whose **corridor is 11 points**.
+//
+// Every fixture in this repo had a wide corridor -- 40pt in the chunker's own
+// unit test -- which is why 14.1b's width-based split passed everything here and
+// then failed on the contract, where the corridor is 11.0pt and 17 of every 100
+// ordinary word gaps on the same page are wider than that. The rows below also
+// carry the braid the way the real annex carries it: the label cell's lines and
+// the value cell's lines fall on *different* baselines, so read line by line
+// they interleave as [label 1] [value 1] [label 2] [value 2].
+//
+// Geometry, so it can be checked against the measurement rather than trusted:
+// values end at x=294 and labels start at x=305, a corridor of 11pt; each column
+// is ~225pt wide, well past a numbering margin's 14.
+function tablePage(
+  number: number,
+  title: string,
+  rows: { label: string[]; value: string[] }[],
+  closing: string,
+): PdfPage {
+  const items = [];
+  const spanning = (text: string, y: number) => ({
+    text,
+    x: 70,
+    y,
+    width: 460,
+    height: 11,
+    rightToLeft: true,
+    endsLine: true,
+  });
+  items.push(spanning(title, 40));
+  let y = 90;
+  for (const row of rows) {
+    row.label.forEach((text, index) =>
+      items.push({
+        text,
+        x: 305,
+        y: y + index * 16,
+        width: 225,
+        height: 11,
+        rightToLeft: true,
+        endsLine: true,
+      }),
+    );
+    // Eight points below its label's line, which is more than a baseline
+    // tolerance and less than a line: the offset that produces the braid.
+    row.value.forEach((text, index) =>
+      items.push({
+        text,
+        x: 70,
+        y: y + 8 + index * 16,
+        width: 224,
+        height: 11,
+        rightToLeft: true,
+        endsLine: true,
+      }),
+    );
+    y += 16 * Math.max(row.label.length, row.value.length) + 34;
+  }
+  items.push(spanning(closing, y));
+  return { number, width: 595, height: 842, items };
+}
+
 // The attractor, and the whole point of page 1.
 //
 // Parties, ID numbers, a phone, an email, two addresses, a parcel and a tender
@@ -117,13 +180,30 @@ const bodyFour = [
 // answered. It names the body clause each row qualifies in words rather than
 // leading with a digit (`סעיף 5 – ...`), which is the form 12.1 cost two
 // commits to learn.
-const annexAOne = [
-  'נספח א׳ — פרטי העסקה',
-  'סעיף 5 – תקופת השכירות',
-  'תקופת השכירות הראשונה היא 36 חודשים, מיום 1 במרץ 2026 ועד יום 28 בפברואר 2029.',
-  'לשוכר עומדות שתי אופציות הארכה, בנות 24 חודשים כל אחת, בתנאים הקבועים בהסכם.',
-  'הודעה על מימוש אופציה תימסר למשכיר לא יאוחר מתשעים ימים לפני תום התקופה.',
-  'ובלבד שסך כל תקופות השכירות יחדיו לא יעלה על עשר שנים ממועד המסירה.',
+// Laid out as the real annex is (`tablePage`): two columns, an 11pt corridor,
+// and cells that wrap onto different baselines. The words are the ones this
+// page always carried, so the golden question about the term is asked of the
+// same sentences -- what changed is the geometry they arrive in.
+const annexAOne: { label: string[]; value: string[] }[] = [
+  {
+    label: ['סעיף 5 – תקופת השכירות'],
+    value: [
+      'תקופת השכירות הראשונה היא 36 חודשים, מיום 1 במרץ 2026',
+      'ועד יום 28 בפברואר 2029.',
+    ],
+  },
+  {
+    label: ['תקופות הארכה, מימושן', 'וההודעה עליהן'],
+    value: [
+      'לשוכר עומדות שתי אופציות הארכה, בנות 24 חודשים כל אחת,',
+      'בתנאים הקבועים בהסכם. הודעה על מימוש אופציה תימסר',
+      'למשכיר לא יאוחר מתשעים ימים לפני תום התקופה.',
+    ],
+  },
+  {
+    label: ['סך כל תקופות השכירות'],
+    value: ['ובלבד שסך כל תקופות השכירות יחדיו לא יעלה על עשר שנים ממועד המסירה.'],
+  },
 ];
 
 const annexATwo = [
@@ -157,7 +237,7 @@ export const mockLeasePages: PdfPage[] = [
   page(3, bodyTwo),
   page(4, bodyThree),
   page(5, bodyFour),
-  page(6, annexAOne),
+  tablePage(6, 'נספח א׳ — פרטי העסקה', annexAOne, filler),
   page(7, annexATwo),
   page(8, annexB),
 ];
