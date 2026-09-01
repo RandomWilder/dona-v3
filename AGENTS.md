@@ -3,7 +3,10 @@
 ## Commands
 - Test: `npm test` · Typecheck: `npm run typecheck` · Lint: `npm run lint` · Format: `npm run format`
 - Golden set: `npm run evals` (gates merges alongside the tests; cases in `evals/golden/`)
+  - Retrieval cases need `OPENAI_API_KEY` in a local `.env` (gitignored). Without it they *skip* and the run still exits 0 — `REQUIRE_EMBEDDINGS=1` makes that a failure, as CI sets it.
+  - `npm run measure` is the instrument beside the gate: every result set with distances, and whether anything separates a right answer from a wrong one.
 - Dev: `npm run db:up && npm run dev` (http://127.0.0.1:3000/health)
+- Guidance: `npm run guidance` loads `docs/guidance/*.md` into `catalog` (idempotent; not run by a deploy — `docs/runbook-deploy.md`)
 - Clean clone → running: `npm ci && npm run db:up && npm run dev` (Docker required; env defaults come from `.env.example`, no `.env` needed locally)
 - Node 24 type stripping runs `.ts` directly — no build step.
 - Deploy: merge to `main` → CI green → staging; push a `v*` tag → CI gate re-run → prod (me-west1). Rollback: `./infra/rollback.sh <staging|prod>`. Infra: `infra/bootstrap.sh <staging|prod>` (idempotent) — never provision by hand. Runbook: `docs/runbook-deploy.md`.

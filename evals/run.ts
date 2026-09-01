@@ -7,7 +7,9 @@ import { placeholderSubject } from './subject.ts';
 // like a failing test — PIPELINE.md §5.
 
 const cases = await loadCases();
-const wantsRetrieval = cases.some((golden) => golden.retrieval);
+const wantsRetrieval = cases.some(
+  (golden) => golden.retrieval || golden.grounding,
+);
 
 const keyed = embeddingsConfigured();
 
@@ -30,13 +32,16 @@ const pool = wantsRetrieval && keyed ? await migratedPoolOrNull() : null;
 const corpus = pool ? await buildCorpus(pool) : null;
 if (corpus) {
   console.log(
-    `corpus: ${corpus.chunks} chunks indexed for tenancy ${corpus.tenancyId}`,
+    `corpus: ${corpus.chunks} chunks, ${corpus.indexed} indexed ` +
+      `for tenancy ${corpus.tenancyId} · ` +
+      `${corpus.sections} policy sections`,
   );
 }
 
 const report = await runCases(cases, {
   answer: placeholderSubject,
   retrieve: corpus?.retrieve,
+  ground: corpus?.ground,
 });
 console.log(formatReport(report));
 await pool?.end();

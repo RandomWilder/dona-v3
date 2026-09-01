@@ -1,0 +1,9 @@
+{
+  "id": "off-lease-refuses",
+  "title": "A question with no grounding is escalated, never answered",
+  "input": { "message": "מי זכה בגביע המדינה בכדורגל?" },
+  "grounding": {
+    "expectSource": "none",
+    "note": "The slice's own Verify step. Neither this tenancy's lease nor the company's guidance says anything about football, so the answer is that we do not know and a person should. Asserted with no expected citation at all: a refusal that still hands back its near-misses is a refusal a caller can put in a prompt, and a model given eight irrelevant clauses and asked to be helpful invents the ninth. Retrieval still returns eight clauses for this question — which is why no rank can express what this case asserts."
+  }
+}

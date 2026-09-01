@@ -1,0 +1,10 @@
+{
+  "id": "lease-outranks-policy",
+  "title": "Where the lease and the guidance both speak, the lease is cited",
+  "input": { "message": "האם צריך לתאם מראש כניסה לדירה לצורך תיקון?" },
+  "grounding": {
+    "expectSource": "lease",
+    "expectRef": "§7.4",
+    "note": "The tenant's own contract outranks a company procedure. Both corpora answer this — §7.4 says the landlord may enter to carry out a repair after coordinating in advance, and נוהל כניסה לדירה adds the 24-hour notice and the alternative date — and the lease is what the tenant signed. Written expecting 'policy' and corrected by npm run measure rather than by an argument."
+  }
+}

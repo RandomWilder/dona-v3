@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import {
   type AgentTurn,
   type GoldenCase,
+  type GroundedAnswer,
+  type Grounder,
   parseCase,
   type RankedHit,
   type Retriever,
@@ -10,6 +12,7 @@ import {
 } from './case.ts';
 import {
   formatReport,
+  gradeGrounding,
   gradeRetrieval,
   loadCases,
   rankOf,
@@ -25,9 +28,14 @@ const silent: Subject = async (): Promise<AgentTurn> => ({
 });
 
 const behavioural = (cases: GoldenCase[]) =>
-  cases.filter((golden) => !golden.retrieval);
+  cases.filter((golden) => !golden.retrieval && !golden.grounding);
 const retrieval = (cases: GoldenCase[]) =>
   cases.filter((golden) => golden.retrieval);
+const grounded = (cases: GoldenCase[]) =>
+  cases.filter((golden) => golden.grounding);
+// Both kinds need a database and a key, so both skip together.
+const needsCorpus = (cases: GoldenCase[]) =>
+  cases.filter((golden) => golden.retrieval || golden.grounding);
 
 // A retriever that returns the refs it is given, in order, at plausible
 // distances. Nothing here reaches a database or a provider: what these tests
@@ -45,7 +53,7 @@ function retrieverOf(refs: (string | null)[]): Retriever {
 }
 
 describe('golden set', () => {
-  it('every behavioural case passes, and retrieval cases skip without a retriever', async () => {
+  it('every behavioural case passes, and corpus cases skip without a corpus', async () => {
     const cases = await loadCases();
     assert.ok(cases.length >= 3, 'the gate needs cases to be a gate');
 
@@ -55,7 +63,7 @@ describe('golden set', () => {
     assert.equal(report.passed, behavioural(cases).length);
     // Skipped is reported, never counted as passed: a run that graded nothing
     // must not read like a run that graded everything.
-    assert.equal(report.skipped, retrieval(cases).length);
+    assert.equal(report.skipped, needsCorpus(cases).length);
     assert.equal(report.total, cases.length);
   });
 
@@ -162,11 +170,26 @@ describe('golden case validation', () => {
           },
           'both.json',
         ),
-      /exactly one of expect or retrieval/,
+      /exactly one of expect, retrieval or grounding/,
     );
     assert.throws(
       () => parseCase({ id: 'x', title: 'y', input }, 'neither.json'),
-      /exactly one of expect or retrieval/,
+      /exactly one of expect, retrieval or grounding/,
+    );
+    // Three kinds now, so two of any pair is still two.
+    assert.throws(
+      () =>
+        parseCase(
+          {
+            id: 'x',
+            title: 'y',
+            input,
+            retrieval: { expectRef: 'a', rankAtMost: 1 },
+            grounding: { expectSource: 'none' },
+          },
+          'both-again.json',
+        ),
+      /exactly one of expect, retrieval or grounding/,
     );
   });
 
@@ -187,6 +210,93 @@ describe('golden case validation', () => {
           'empty.json',
         ),
       /expectRef/,
+    );
+  });
+});
+
+function answered(
+  source: GroundedAnswer['source'],
+  refs: string[],
+): GroundedAnswer {
+  return {
+    source,
+    hits: refs.map((ref) => ({ ref })),
+    escalate: source === 'none',
+  };
+}
+
+const grounderOf = (answer: GroundedAnswer): Grounder => async () => answer;
+
+describe('grounding cases', () => {
+  it('grades where the answer was allowed to come from', async () => {
+    const cases = await loadCases();
+    const refusals = grounded(cases).filter(
+      (golden) => golden.grounding?.expectSource === 'none',
+    );
+    assert.ok(refusals.length >= 1, 'the slice bar needs a refusal case');
+
+    const passing = await runCases(refusals, {
+      answer: placeholderSubject,
+      ground: grounderOf(answered('none', [])),
+    });
+    assert.equal(passing.failed, 0, formatReport(passing));
+
+    // A system that answers a question it has no grounding for is the failure
+    // the whole slice exists to prevent, so the gate has to be able to see it.
+    const inventing = await runCases(refusals, {
+      answer: placeholderSubject,
+      ground: grounderOf(answered('lease', ['נספח א׳ §10'])),
+    });
+    assert.equal(inventing.passed, 0);
+    assert.match(
+      inventing.results[0]?.failures[0] ?? '',
+      /expected the answer to come from none, got lease/,
+    );
+  });
+
+  it('catches a refusal that hands back its near-misses anyway', () => {
+    const refusal: GoldenCase = {
+      id: 'x',
+      title: 'y',
+      input: { message: 'מה?' },
+      grounding: { expectSource: 'none' },
+    };
+    const failures = gradeGrounding(refusal, {
+      source: 'none',
+      hits: [{ ref: 'נספח א׳ §10' }],
+      escalate: true,
+    });
+    assert.match(failures.join(' '), /returned 1 passages to cite anyway/);
+  });
+
+  it('catches escalate and source disagreeing', () => {
+    const refusal: GoldenCase = {
+      id: 'x',
+      title: 'y',
+      input: { message: 'מה?' },
+      grounding: { expectSource: 'none' },
+    };
+    const failures = gradeGrounding(refusal, {
+      source: 'none',
+      hits: [],
+      escalate: false,
+    });
+    assert.match(failures.join(' '), /escalate=false disagrees/);
+  });
+
+  it('refuses a case that expects a citation on a refusal', () => {
+    assert.throws(
+      () =>
+        parseCase(
+          {
+            id: 'x',
+            title: 'y',
+            input: { message: 'מה?' },
+            grounding: { expectSource: 'none', expectRef: 'נספח א׳ §10' },
+          },
+          'bad.json',
+        ),
+      /a refusal case cannot expect a citation/,
     );
   });
 });

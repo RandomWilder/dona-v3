@@ -14,7 +14,7 @@ import type { ObjectStore } from '../../kernel/objects.ts';
 import type { PdfText } from '../../kernel/pdf.ts';
 import { asText, validId } from '../../kernel/validate.ts';
 import type { Portfolio } from '../../portfolio/contract.ts';
-import { chunkLease, type LeaseChunk } from './clauses.ts';
+import { chunkLease, isRetrievable, type LeaseChunk } from './clauses.ts';
 import { applyEdits, EditError } from './edits.ts';
 import { documentPath } from './paths.ts';
 import {
@@ -224,6 +224,10 @@ export interface Ingestion {
   documentId: string;
   tenancyId: string;
   chunks: number;
+  // How many of them retrieval can reach. Since 14.1b this is not `chunks`: a
+  // cover page and a bare heading are stored and not embedded, and reporting
+  // one number for both would say a lease is searchable in places it is not.
+  indexed: number;
   pages: number;
   imageOnlyPages: number[];
 }
@@ -526,6 +530,12 @@ export function createDocuments(deps: DocumentDeps): Documents {
           const pages = await deps.pdf.pages(object.bytes);
           const { chunks, imageOnlyPages } = chunkLease(pages);
 
+          // Which chunks retrieval may return. Everything is stored; only
+          // these are embedded, and the predicate lives in clauses.ts with the
+          // rest of what a lease is. See SPEC-occupancy.md, "an uncitable chunk
+          // is stored and never indexed".
+          const indexed = chunks.filter(isRetrievable);
+
           // Embedded before the transaction opens, not inside it: this is a
           // network call to a third party, and holding a Postgres transaction
           // open across one is how a slow provider becomes a lock nobody can
@@ -533,9 +543,9 @@ export function createDocuments(deps: DocumentDeps): Documents {
           // anyway -- a failed embedding throws here, before a single row is
           // deleted, so a document is never half-indexed and never left with
           // clauses that have no vectors.
-          const embedding = await embedChunks(chunks);
+          const embedding = await embedChunks(indexed);
 
-          await replaceChunks(document, chunks, embedding, {
+          await replaceChunks(document, chunks, indexed, embedding, {
             pageCount: pages.length,
             imageOnlyPages,
           });
@@ -546,6 +556,7 @@ export function createDocuments(deps: DocumentDeps): Documents {
             // the column every retrieval query in 12.2 filters on.
             tenancyId: document.tenancyId,
             chunks: chunks.length,
+            indexed: indexed.length,
             pages: pages.length,
             imageOnlyPages,
           };
@@ -946,10 +957,18 @@ export function createDocuments(deps: DocumentDeps): Documents {
   async function replaceChunks(
     document: DocumentRecord,
     chunks: LeaseChunk[],
+    indexed: LeaseChunk[],
     embedding: { model: string; vectors: number[][] },
     read: { pageCount: number; imageOnlyPages: number[] },
   ): Promise<void> {
     const now = clock.now();
+    // Keyed by ordinal rather than by position, because the two lists are no
+    // longer the same length: pairing a clause with another clause's vector is
+    // the silent corruption `embedChunks` counts against, and an index into the
+    // wrong list is how it would arrive.
+    const vectors = new Map(
+      indexed.map((chunk, at) => [chunk.ordinal, embedding.vectors[at]]),
+    );
     await inTransaction(pool, async (client) => {
       // The embeddings go with them, by ON DELETE CASCADE on the chunk: an
       // embedding is derived from a clause and is meaningless without it.
@@ -967,7 +986,7 @@ export function createDocuments(deps: DocumentDeps): Documents {
           WHERE id = $1`,
         [document.id, now, read.pageCount, read.imageOnlyPages],
       );
-      for (const [at, chunk] of chunks.entries()) {
+      for (const chunk of chunks) {
         const chunkId = newId(clock);
         await client.query(
           `INSERT INTO occupancy_document_chunks
@@ -987,11 +1006,17 @@ export function createDocuments(deps: DocumentDeps): Documents {
             now,
           ],
         );
-        const vector = embedding.vectors[at];
+        const vector = vectors.get(chunk.ordinal);
         if (!vector) {
-          throw new KernelError('unavailable', 'a clause has no vector', {
-            ordinal: chunk.ordinal,
-          });
+          // A chunk that was deliberately not indexed is stored and skipped.
+          // One that should have had a vector and has none is still the
+          // corruption this guard has always been here to stop.
+          if (isRetrievable(chunk)) {
+            throw new KernelError('unavailable', 'a clause has no vector', {
+              ordinal: chunk.ordinal,
+            });
+          }
+          continue;
         }
         await client.query(
           `INSERT INTO occupancy_chunk_embeddings

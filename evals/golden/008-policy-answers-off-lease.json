@@ -1,0 +1,10 @@
+{
+  "id": "policy-answers-off-lease",
+  "title": "An office question the lease cannot answer is answered from policy",
+  "input": { "message": "באילו שעות המשרד פתוח?" },
+  "grounding": {
+    "expectSource": "policy",
+    "expectRef": "נוהל פנייה למשרד § שעות פעילות המשרד",
+    "note": "The middle rung of lease → policy → refuse, and the case that proves the ordering is not just 'the lease, or nothing'. The lease does come back for this question — נספח ב׳ §1 states the complex's quiet hours — and it shares exactly one word with what was asked, where the policy shares three. The citation is spelled by the chunker, not by whoever wrote this case: renaming that heading in docs/guidance/office-contact.md turns this gate red, which is the feedback loop working."
+  }
+}

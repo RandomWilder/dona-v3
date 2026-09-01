@@ -91,7 +91,7 @@ nothing. The importer bar closed later the same day, when its standard was corre
 
 - [ ] Lease upload from admin → GCS, attached to an occupancy; ingest pipeline: text extraction, clause-aware chunking, embeddings → pgvector (scoped by occupancy). **Done when:** a real pilot lease is fully indexed.
 - [ ] Digital-twin extraction: end date, rent, deposit/guarantees, notice periods, deductible clauses → structured fields, each traceable to its source clause; admin review screen to confirm/correct. **Done when:** one real lease's fields reviewed and confirmed.
-- [ ] Guidance docs (company policy) upload + same pipeline; retrieval API ranks **this occupancy's lease → policy → refuse**. **Done when:** an off-lease question returns "unknown + escalate", never an invention.
+- [x] Guidance docs (company policy) **authored as markdown in the repo** rather than uploaded — decided 2026-09-01, since policy text is ours — through the same retrieval pipeline; `channel` ranks **this occupancy's lease → policy → refuse**. **Done:** an off-lease question returns "unknown + escalate" and hands back nothing to cite, gated by two golden cases (slice 14.1b).
 - [ ] **Golden set v1 in CI (~30 real-style Hebrew questions):** grounding, refusal, isolation (asks about another tenant's lease must fail). **Done when:** it gates merges.
 
 **Checkpoint demo:** curl the internal answer endpoint with a real lease question → Hebrew answer + clause citation.

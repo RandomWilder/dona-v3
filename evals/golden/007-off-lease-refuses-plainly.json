@@ -1,0 +1,9 @@
+{
+  "id": "off-lease-refuses-plainly",
+  "title": "A second everyday off-topic question refuses too",
+  "input": { "message": "מה מזג האוויר צפוי להיות בסוף השבוע?" },
+  "grounding": {
+    "expectSource": "none",
+    "note": "One refusal is an anecdote. This one is deliberately ordinary rather than absurd — the kind of thing a tenant asks a chat window out of habit — because the failure that matters is a system that refuses only the obviously silly and answers the plausibly wrong."
+  }
+}

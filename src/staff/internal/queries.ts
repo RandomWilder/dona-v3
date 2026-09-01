@@ -1,10 +1,10 @@
+import type { Grounding } from '../../channel/contract.ts';
 import type { Person } from '../../identity/contract.ts';
 import { type AuditLog, createAuditLog } from '../../kernel/audit.ts';
 import { systemClock } from '../../kernel/clock.ts';
 import { KernelError } from '../../kernel/errors.ts';
 import type {
   ChunkRecord,
-  ClauseHit,
   DocumentRecord,
   LeaseFact,
   LeaseFieldReview,
@@ -49,10 +49,11 @@ export interface DocumentChunks {
   unit: UnitView;
   document: DocumentRecord;
   chunks: ChunkRecord[];
-  // Slice 12.2. Present only when the operator asked something: `null` is "no
-  // search was run", which the screen renders differently from an empty list —
-  // a search that found nothing is a fact worth showing.
-  search: { query: string; hits: ClauseHit[] } | null;
+  // Slice 12.2, rewired in 14.1b. Present only when the operator asked
+  // something: `null` is "no search was run", which the screen renders
+  // differently from a refusal — a question the system declined to answer is a
+  // decision worth showing, and an empty result is not the same thing.
+  search: { query: string; grounding: Grounding } | null;
   // Slice 13.1. The fields extracted from this document, in the registry's
   // order. Empty means nobody has pressed the button — which the screen says
   // rather than rendering a lease that appears to state nothing.
@@ -242,13 +243,17 @@ export function createStaffQueries(deps: StaffCommandDeps): StaffQueries {
         // was resolved from the unit the operator opened.
         const reviews = await deps.occupancy.listFieldReviews(document.id);
         const asked = typeof query === 'string' ? query.trim() : '';
+        // Through `channel` rather than `occupancy`, since 14.1b: what a
+        // question may be answered from -- this tenancy's lease, the company's
+        // policy, or nothing -- is one rule, and a screen that asked for clauses
+        // and decided for itself would be the second copy of it.
         const search =
           asked.length > 0 && tenancy
             ? {
                 query: asked,
-                hits: await deps.occupancy.searchClauses({
+                grounding: await deps.channel.groundQuestion({
                   tenancyId: tenancy.tenancy.id,
-                  query: asked,
+                  question: asked,
                 }),
               }
             : null;

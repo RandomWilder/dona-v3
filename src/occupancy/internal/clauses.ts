@@ -31,6 +31,38 @@ export interface LeaseChunk {
   pageTo: number;
 }
 
+// Which chunks retrieval may return. Both halves of it say the same thing --
+// this chunk cannot answer anything -- and neither removes a chunk from the
+// document: `chunkLease` still produces them, they are still stored, and
+// `listChunks` still shows them. What they do not get is a vector.
+//
+// **No clause reference** is a cover page, a preamble or a signature block.
+// Nothing can cite it, so the only thing a caller could do with it is feed it to
+// a model unattributed -- and slice 14.1a measured it as the chunk that wins
+// questions it has nothing to do with, while being the PII-densest text in the
+// lease. Not embedding it is therefore an accuracy decision and a privacy one at
+// once: the parties' names and ID numbers never reach the embedding provider,
+// which is the rule `twin.ts` already applies to extraction, reached from the
+// other side.
+//
+// **Text that is only its own heading** is a label: `נספח א׳ — פרטי העסקה` and
+// nothing else. It is the argument `coalesce` makes for a bare parent heading,
+// applied to the one case `coalesce` deliberately leaves alone -- an annex
+// heading is not the parent of the clauses inside it, and folding them would
+// cite an annex's preamble as the clause about the term. An annex that *has* a
+// preamble says more than its heading and stays indexed; one that is a title and
+// a page break does not.
+export function isRetrievable(chunk: {
+  clauseRef: string | null;
+  heading: string | null;
+  text: string;
+}): boolean {
+  if (chunk.clauseRef === null) {
+    return false;
+  }
+  return chunk.heading === null || chunk.text.trim() !== chunk.heading.trim();
+}
+
 export interface LeaseChunking {
   chunks: LeaseChunk[];
   // Pages that carried no text layer, named rather than counted: a complete
@@ -62,10 +94,18 @@ export const minChunkChars = 200;
 // number pretending to be part of a contract.
 export const minPageChars = 40;
 
-// `נספח א׳`, `נספח י״ב` -- one or two Hebrew letters with a geresh or
-// gershayim. Anchored: the word appears inside sentences too ("as set out in
-// נספח ב׳"), and only a line that *begins* with it is a heading.
-const annexHeading = /^נספח\s+([א-ת]{1,2}["'׳״]?[א-ת]?)/;
+// `נספח א׳`, `נספח י״ב` -- Hebrew letters used as a numeral. Anchored: the word
+// appears inside sentences too ("as set out in נספח ב׳"), and only a line that
+// *begins* with it is a heading.
+//
+// **The geresh is required unless the marker is a single letter**, and that is
+// not cosmetic. `נספח זה מפרט את התנאים...` -- "this annex sets out the terms",
+// the way an annex's own preamble opens -- was read as an annex lettered ז, and
+// every clause after it was then numbered `נספח זה §…`: a citation naming an
+// annex that does not exist. It is the same class of defect as a wrapped
+// sentence read as a clause number (see `startsClause`), and the same fix --
+// a marker has to look like a marker rather than merely start like one.
+const annexHeading = /^נספח\s+([א-ת]["'׳״][א-ת]?|[א-ת])(?=[\s—–\-:.,)]|$)/;
 
 // `14.`, `3.2`, `12.1.4` at the start of a line. The trailing separator is
 // optional because typesetting varies between the body and the annexes.
@@ -127,10 +167,22 @@ export function chunkLease(pages: PdfPage[]): LeaseChunking {
 // --- geometry -------------------------------------------------------------
 
 // The items on a page, assembled into lines in reading order.
+//
+// Two paths, because a lease has two kinds of page. Most of it is prose, where
+// a line is a baseline and reading order is enough. `נספח א׳` is a two-column
+// label/value table, where a baseline is not a line at all -- see `splitColumns`
+// and the braid it exists to undo.
 function pageLines(page: PdfPage): string[] {
+  const table = splitColumns(page);
+  return table
+    ? tableLines(table, page.width)
+    : proseLines(page.items, page.width);
+}
+
+function proseLines(items: PdfTextItem[], pageWidth: number): string[] {
   const assembled: string[] = [];
-  for (const row of groupByBaseline(page.items)) {
-    const text = joinRow(row, page.width);
+  for (const row of groupByBaseline(items)) {
+    const text = joinRow(row, pageWidth);
     if (text.length > 0) {
       assembled.push(text);
     }
@@ -143,11 +195,7 @@ function pageLines(page: PdfPage): string[] {
 // and one constant cannot suit both.
 function groupByBaseline(items: PdfTextItem[]): PdfTextItem[][] {
   const sorted = [...items].sort((a, b) => a.y - b.y);
-  const heights = sorted
-    .map((item) => item.height)
-    .filter((height) => height > 0);
-  const typical = heights.length > 0 ? median(heights) : 10;
-  const tolerance = Math.max(typical * 0.6, 2);
+  const tolerance = Math.max(medianHeight(sorted) * 0.6, 2);
 
   const rows: PdfTextItem[][] = [];
   let current: PdfTextItem[] = [];
@@ -187,7 +235,7 @@ function joinRow(row: PdfTextItem[], pageWidth: number): string {
   // Runs separated by a point or two are words; runs separated by a large gap
   // are separate *columns*, and that distinction is the two-column annex
   // working or not working.
-  const columnGap = Math.max(pageWidth * 0.06, 30);
+  const columnGap = columnGapOf(pageWidth);
   const clusters: string[] = [];
   let cluster = '';
   let previous: PdfTextItem | null = null;
@@ -223,9 +271,15 @@ function joinRow(row: PdfTextItem[], pageWidth: number): string {
   // separator says so rather than pretending the cells are a sentence.
   if (cleaned.length === 2) {
     const [label, value] = cleaned as [string, string];
-    return /[:：]$/.test(label) ? `${label} ${value}` : `${label}: ${value}`;
+    return bind(label, value);
   }
   return cleaned.join(' | ');
+}
+
+// A label and the value that belongs to it, joined so that no later reader can
+// separate them again. The colon is added unless the label already ends in one.
+function bind(label: string, value: string): string {
+  return /[:：]$/.test(label) ? `${label} ${value}` : `${label}: ${value}`;
 }
 
 function distance(
@@ -242,9 +296,199 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+// The height of a typical glyph on a page, which is what both a baseline
+// tolerance and a blank line are measured in. A page mixes a 20pt heading with
+// 10pt body, so one constant cannot suit both.
+function medianHeight(items: PdfTextItem[]): number {
+  const heights = items
+    .map((item) => item.height)
+    .filter((height) => height > 0);
+  return heights.length > 0 ? median(heights) : 10;
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)] as number;
+}
+
+// --- the two-column annex -------------------------------------------------
+
+// `נספח א׳` is a label/value table, and slice 12.1 only half solved it. Binding
+// two runs that share a baseline (`joinRow`) fixed the easy half: a value can no
+// longer pair with the label on the line above it.
+//
+// The half it left is what the day-12 evidence calls the braid. When a label
+// cell wraps onto two lines and its value cell wraps onto two of its own, the
+// two columns' lines fall at slightly different heights, and reading by baseline
+// interleaves them:
+//
+//     תקופת השכירות הראשונה ומועדי: החל מיום 1 במרץ 2026
+//     תחילתה וסיומה: ועד יום 28 בפברואר 2029
+//
+// The dates survive and are readable -- which is why the twin could read this
+// clause at all -- and the label's sentence is cut in half with a value pushed
+// through the middle of it. It is the clause 13.1 reads, so it is worth a second
+// pass.
+//
+// The fix is to stop treating a baseline as a line on such a page: find the
+// corridor between the columns, assemble each column into *cells* rather than
+// rows, and give each label the value cell that sits beside it.
+
+// How far apart two columns have to be. Same measure `joinRow` uses to tell a
+// word gap from a column gap, so one page cannot be two columns for one of them
+// and one column for the other.
+function columnGapOf(pageWidth: number): number {
+  return Math.max(pageWidth * 0.06, 30);
+}
+
+interface ColumnSplit {
+  /** The column a reader reads first: the right one, in a Hebrew document. */
+  labels: PdfTextItem[];
+  values: PdfTextItem[];
+  /** Lines that cross the corridor -- a heading, a paragraph of prose. */
+  spanning: PdfTextItem[];
+  /** Median glyph height: the unit a blank line is measured in. */
+  typical: number;
+}
+
+// Whether this page is a two-column table, and where the corridor is.
+//
+// Deliberately hard to satisfy. A page of prose that happens to carry one wide
+// gap must not be re-read as a table, so a split has to have real columns on
+// both sides, a corridor at least as wide as a column gap, and almost nothing
+// crossing it. Anything else -- three columns, a ragged layout, one column --
+// returns null and the page is read exactly as it was before this existed.
+function splitColumns(page: PdfPage): ColumnSplit | null {
+  const items = page.items.filter((item) => item.text.trim().length > 0);
+  if (items.length < 6) {
+    return null;
+  }
+  const gap = columnGapOf(page.width);
+  // A heading or a line of prose legitimately crosses the corridor -- `נספח א׳`
+  // opens with its own title and closes with a paragraph, so two is the floor
+  // rather than the exception. Past a quarter of the page there is no corridor.
+  const maxCrossing = Math.max(2, Math.floor(items.length * 0.25));
+
+  let best: ColumnSplit | null = null;
+  let widest = 0;
+  for (const candidate of items.map((item) => item.x)) {
+    const left: PdfTextItem[] = [];
+    const right: PdfTextItem[] = [];
+    const spanning: PdfTextItem[] = [];
+    for (const item of items) {
+      if (item.x + item.width <= candidate) {
+        left.push(item);
+      } else if (item.x >= candidate) {
+        right.push(item);
+      } else {
+        spanning.push(item);
+      }
+    }
+    if (left.length < 3 || right.length < 3 || spanning.length > maxCrossing) {
+      continue;
+    }
+    const corridor =
+      Math.min(...right.map((item) => item.x)) -
+      Math.max(...left.map((item) => item.x + item.width));
+    if (corridor < gap || corridor <= widest) {
+      continue;
+    }
+    widest = corridor;
+    // Which side holds the labels is a question about the language, not about
+    // the geometry: Hebrew reads right to left, so the right column is the one
+    // a reader meets first. Decided from the content for the reason `joinRow`
+    // decides it from the content -- a row of digits reports itself as ltr.
+    const rightToLeft = items.some((item) => hebrew.test(item.text));
+    best = {
+      labels: rightToLeft ? right : left,
+      values: rightToLeft ? left : right,
+      spanning,
+      typical: medianHeight(items),
+    };
+  }
+  return best;
+}
+
+// One cell of a column: the lines of one table row, joined back into the
+// sentence they were before the typesetter wrapped them.
+interface Cell {
+  y: number;
+  text: string;
+}
+
+// A column's items, cut into cells. Lines a normal line-height apart are one
+// cell that wrapped; a bigger step down the page is the next row of the table.
+//
+// The threshold is two glyph heights -- a blank line's worth -- rather than a
+// measured line pitch, because a cell of one line gives no pitch to measure and
+// the annexes are full of those.
+function columnCells(
+  items: PdfTextItem[],
+  pageWidth: number,
+  typical: number,
+): Cell[] {
+  const cells: Cell[] = [];
+  let open: { y: number; lines: string[]; last: number } | null = null;
+  for (const row of groupByBaseline(items)) {
+    const text = joinRow(row, pageWidth);
+    if (text.length === 0) {
+      continue;
+    }
+    const y = Math.min(...row.map((item) => item.y));
+    if (open && y - open.last <= typical * 2) {
+      open.lines.push(text);
+      open.last = y;
+      continue;
+    }
+    if (open) {
+      cells.push({ y: open.y, text: open.lines.join(' ') });
+    }
+    open = { y, lines: [text], last: y };
+  }
+  if (open) {
+    cells.push({ y: open.y, text: open.lines.join(' ') });
+  }
+  return cells;
+}
+
+// The page, read as a table: every label with its own value, in the order they
+// appear down the page.
+function tableLines(split: ColumnSplit, pageWidth: number): string[] {
+  const { typical } = split;
+  const labels = columnCells(split.labels, pageWidth, typical);
+  const values = columnCells(split.values, pageWidth, typical);
+  const spanning = columnCells(split.spanning, pageWidth, typical);
+
+  const bound = new Map<number, string[]>();
+  const loose: Cell[] = [];
+  for (const value of values) {
+    // The label this value sits beside: the last one at or above it, within a
+    // line's tolerance. A value with no label above it -- the top of a page
+    // whose first row continues from the previous one -- is kept as its own
+    // line rather than attached to whatever came next.
+    const owner = labels.filter((label) => label.y <= value.y + typical).at(-1);
+    if (!owner) {
+      loose.push(value);
+      continue;
+    }
+    const already = bound.get(owner.y);
+    if (already) {
+      already.push(value.text);
+    } else {
+      bound.set(owner.y, [value.text]);
+    }
+  }
+
+  const lines = [
+    ...labels.map((label) => ({
+      y: label.y,
+      text: (bound.get(label.y) ?? []).reduce(bind, label.text),
+    })),
+    ...loose,
+    ...spanning,
+  ];
+  lines.sort((a, b) => a.y - b.y);
+  return lines.map((line) => line.text);
 }
 
 // --- clause boundaries ----------------------------------------------------

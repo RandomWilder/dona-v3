@@ -44,6 +44,72 @@ const probes: Probe[] = [
   { question: 'מה שעות המנוחה במתחם?', expect: 'נספח ב׳ §1' },
 ];
 
+// Slice 14.1b's own probes: questions whose answers are **not in this lease**.
+// The refusal rule is designed from these, because a rule tuned only on
+// questions that have answers is a rule that has never been asked to say no.
+interface GroundingProbe {
+  question: string;
+  /** Where the answer should come from, decided by reading the corpora. */
+  want: 'lease' | 'policy' | 'none';
+  why: string;
+}
+
+const groundingProbes: GroundingProbe[] = [
+  {
+    question: 'מה גובה דמי השכירות?',
+    want: 'lease',
+    why: 'נספח א׳ §10 states it',
+  },
+  {
+    question: 'האם מותר להחזיק כלב בדירה?',
+    want: 'lease',
+    why: 'נספח ב׳ §3 states it',
+  },
+  {
+    question: 'באילו שעות המשרד פתוח?',
+    want: 'policy',
+    why: 'the lease says nothing about the office; the guidance does',
+  },
+  {
+    question: 'כיצד מדווחים על תקלה שאינה דחופה?',
+    want: 'policy',
+    why: 'a reporting procedure is ours, not the contract\'s',
+  },
+  {
+    question: 'האם צריך לתאם מראש כניסה לדירה לצורך תיקון?',
+    // Written expecting `policy`, and corrected by the instrument rather than
+    // by an argument: §7.4 says in as many words that the landlord may enter to
+    // carry out a repair *after coordinating in advance*. The lease does answer
+    // this, the guidance adds the procedure, and lease-first is right.
+    want: 'lease',
+    why: '§7.4 states it; the guidance adds the procedure and does not replace it',
+  },
+  {
+    question: 'באיזו שעה בדיוק יגיע הטכנאי מחר?',
+    // Also corrected by the instrument. Written as the refusal case golden 002
+    // carries, and the guidance turns out to answer it: `נקבע לה חלון זמן ולא
+    // שעה מדויקת` — a window is set, not an exact hour. A grounded answer
+    // saying so is better than a refusal, and it is the answer a tenant wants.
+    want: 'policy',
+    why: 'the entry procedure says a window is set and an exact hour is not',
+  },
+  {
+    question: 'כמה עולה מנוי לחדר הכושר במתחם השכן?',
+    want: 'none',
+    why: 'about another building, and about a price nobody wrote down',
+  },
+  {
+    question: 'מי זכה בגביע המדינה בכדורגל?',
+    want: 'none',
+    why: 'nothing to do with a tenancy at all',
+  },
+  {
+    question: 'מה מזג האוויר צפוי להיות בסוף השבוע?',
+    want: 'none',
+    why: 'a second refusal, so the rule is not proved by one sentence',
+  },
+];
+
 const round = (value: number) => value.toFixed(3);
 const label = (ref: string | null) => ref ?? '— (front matter)';
 
@@ -58,7 +124,13 @@ if (!embeddingsConfigured()) {
 }
 
 const corpus = await buildCorpus(pool);
-console.log(`# Ranking measurement — mock lease, ${corpus.chunks} chunks\n`);
+// Both numbers, because since 14.1b they differ: a cover page and a bare
+// heading are stored and not embedded, so a corpus of 19 chunks is a corpus of
+// 16 findable ones and one number for both would overstate the search.
+console.log(
+  `# Ranking measurement — mock lease, ${corpus.chunks} chunks, ` +
+    `${corpus.indexed} indexed · ${corpus.sections} policy sections\n`,
+);
 
 interface Measured extends Probe {
   hits: RankedHit[];
@@ -161,6 +233,29 @@ console.log(
     ? `\n**A separating threshold exists**, anywhere in \`${round(bestWrong)}\`–\`${round(worstAnswer)}\`.`
     : '\n**No single distance threshold separates right from wrong here** — the worst answering clause scores worse than the best non-answer. A refusal rule cannot be a bare distance cutoff.',
 );
+
+// Slice 14.1b: the refusal. Printed after the distances on purpose -- the table
+// above is why this is not a threshold, and this is what replaced it.
+console.log('\n## Grounding: lease → policy → refuse\n');
+console.log('| question | wanted | got | cites | ok |');
+console.log('|---|---|---|---|---|');
+let grounded = 0;
+for (const probe of groundingProbes) {
+  const answer = await corpus.grounding(probe.question);
+  const ok = answer.source === probe.want;
+  if (ok) grounded += 1;
+  const cites = answer.hits[0]?.ref ?? '—';
+  console.log(
+    `| \`${probe.question}\` | ${probe.want} | ${answer.source} |` +
+      ` \`${cites}\` | ${ok ? '✅' : '✘'} |`,
+  );
+}
+console.log(
+  `\n**${grounded} of ${groundingProbes.length}** probes were grounded where they should be.`,
+);
+for (const probe of groundingProbes) {
+  console.log(`- \`${probe.question}\` — ${probe.want}: ${probe.why}`);
+}
 
 console.log('\n## Ratchet values\n');
 console.log('The rank each golden question achieves today:\n');

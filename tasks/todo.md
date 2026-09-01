@@ -316,46 +316,62 @@ proven in both directions: green at 5/5 with 19 chunks indexed, and red with
 `נספח א׳ §5 ranked 2, worse than the ratchet at 1` when tightened on purpose. Evidence:
 `tasks/evidence/day-14-ranking.md`.
 
-### Slice 14.1b — Guidance docs + the ranking rule ☐
-> **Arrives with a measured problem and a starting hypothesis, from 12.2, and now an instrument
-> from 14.1a.** Retrieval works and is isolated; what it is not yet is *ordered*.
+### Slice 14.1b — Guidance docs + the ranking rule ☑
+> **Arrived with a measured problem and a starting hypothesis, from 12.2, and an instrument from
+> 14.1a.** Retrieval worked and was isolated; what it was not yet is *ordered*. Kept as one slice
+> rather than split again — Asaf's call on 2026-09-01, against the recommendation to split it, and
+> six bullets landed together.
 
-- [ ] Company policy documents through the same pipeline — as markdown we author rather than a
-      PDF, decided 2026-09-01: policy text is ours, not a customer's, so it belongs in the repo as
-      a reviewable file and cites by heading. Same *retrieval* pipeline, different front door, and
-      the gap is written into the spec rather than glossed. They are org-wide and not tenancy-
-      scoped, so they cannot live in `occupancy`'s tables without a nullable `tenancy_id` — the
-      exact shape SPEC-occupancy.md's "the filter is a column" forbids. `catalog` gains its first
-      tables, spec written first
-- [ ] Retrieval ranks **this occupancy's lease → policy → refuse**, in that order, and the refusal
-      is a real answer rather than a fallback. It composes occupancy and catalog, so it belongs in
-      `channel` — the module SPEC.md's map puts above both, and where week 4's agent will reach
-      for it as a tool
-- [ ] An off-lease question returns **"unknown + escalate"**, never an invention — and it may not
-      be a bare distance cutoff, which 14.1a measured out of the running. What is left: the clause
-      reference as a signal, keyword agreement, or a margin between first and second hit rather
-      than an absolute
-- [ ] **The ranking change itself.** 14.1a narrowed the candidates rather than leaving them a
-      list: the attractor is a real, reproducing chunk-level effect, so **down-weighting or
-      re-cutting front matter is the candidate with evidence behind it**, and hybrid retrieval is
-      the one to reach for if that is not enough. Its proof is the two ratchets going down —
-      `נספח א׳ §10` to 1 and `נספח א׳ §5` to 1. **Re-measure on staging's real lease before
-      believing it**: the fixture ranks cleaner than the contract does
-- [ ] **A privacy decision, not only an accuracy one — and 14.1a made it concrete.** The front
-      page is the PII-densest chunk in the document, it carries `clauseRef: null` so nothing can
-      ever cite it, and it **wins a question about the lease term**. The only thing downstream can
-      do with an uncitable hit is feed it to a model, which is exactly what week 4 does with top
-      hits. Decide it here deliberately rather than inherit it
-- [ ] **`נספח א׳`'s two-column layout is half solved** (12.1). `§5` interleaves the label column
-      with the value column: the dates survive and are readable, the sentence is braided. It is
-      the annex the twin reads, so a second pass belongs near this work
+- [x] Company policy documents through the same pipeline — markdown we author, three files in
+      `docs/guidance/`, 15 sections, cited by heading. `catalog` gains its first tables
+      (`0016`), **spec written first**, and the migration carries **no `tenancy_id` at all**:
+      policy is org-wide, and a nullable tenancy column is the exact shape
+      SPEC-occupancy.md's "the filter is a column" forbids. `npm run guidance` loads them; a
+      deploy deliberately does not, because a deploy that calls a model provider is a deploy
+      that fails when the provider is slow
+- [x] Retrieval ranks **this occupancy's lease → policy → refuse**, in `channel`, which composes
+      the two through their contracts. **The order is by source and the tie-break is by the
+      question's own words** — a count of content terms each corpus uses, which is comparable
+      across two corpora where a cosine distance is not. The lease wins ties
+- [x] An off-lease question returns **unknown + escalate**, and hands back **nothing to cite** —
+      not a shortened list, an empty one, because a caller given the near-misses puts them in a
+      prompt and a model handed eight irrelevant clauses invents the ninth
+- [x] **The ranking change, and the ratchets went down.** The attractor is not down-weighted or
+      re-cut: **a chunk nothing can cite is stored and never embedded**. Both golden questions
+      now rank **1** (from 1-held-at-2 and 2), and the front page is top-3 for **0 of 6** probes
+      against 3 of 6. The separation finding survives the fix — worst answer `0.652`, best
+      non-answer `0.470` — which is why the refusal is not a cutoff
+- [x] **The privacy decision, taken rather than inherited.** Not embedding the front page means
+      the parties' names, ID numbers, phone and email **never reach the provider at all** — the
+      identical rule `twin.ts` applies to extraction, reached from the other direction. Stored
+      and not indexed: the chunks screen still shows the text, and now says
+      `19 סעיפים (16 ניתנים לחיפוש)` with the excluded ones marked
+- [x] **`נספח א׳`'s two-column layout, closed.** Reproduced from geometry first — the label's
+      sentence cut in half with a value pushed through it — then read column by column and cell
+      by cell. Every page of prose is read exactly as before, and a test pins that
+- [x] **An unplanned finding, and the sharper of the two.** `נספח זה מפרט את התנאים…` — *"this
+      annex sets out"*, the way an annex's own preamble opens — was read as an annex lettered ז,
+      which would have cited every clause after it as `נספח זה §…`: **a citation naming an annex
+      that does not exist.** Same class as 12.2's wrapped-sentence phantoms, one level up
+- [x] **A third kind of golden case** (`grounding`), because a refusal is not observable in a
+      rank: the question retrieves eight clauses and none of them answers it. Four new cases,
+      9/9 green
 
 **Done when:** a question with no grounding refuses instead of inventing.
 **Verify:** the golden set's refusal cases. · Size: M
+**Closed 2026-09-01 — the bar, met and evidenced.** Two refusal cases green, both asserting the
+source *and* that nothing came back to cite. The instrument corrected its author twice, which is
+the part worth keeping: two probes written as `none`/`policy` were wrong, and reading the output
+settled it rather than an argument — §7.4 does say entry needs coordinating in advance, and the
+entry procedure does answer *"what time exactly"* with *`נקבע לה חלון זמן ולא שעה מדויקת`*.
+**Not yet measured on the real lease**, and that is the gap that matters: every number is the
+8-page fixture's, where the 38-page contract had these questions at 5th and 3rd of 8. Evidence:
+`tasks/evidence/day-14-ranking-rule.md`.
 
 ### Slice 14.2 — Golden set v1 in CI ☐
-> **The harness is 14.1a's; this slice is the cases.** Two kinds exist as of 14.1a — behavioural
-> and retrieval — and `REQUIRE_EMBEDDINGS=1` already makes a skipped case a red gate in CI.
+> **The harness is 14.1a's; this slice is the cases.** **Three** kinds exist as of 14.1b —
+> behavioural, retrieval and grounding — and `REQUIRE_EMBEDDINGS=1` already makes a skipped case a
+> red gate in CI. Nine cases stand; this slice takes it to ~30.
 
 - [ ] **The extractor's oscillation gets its case here** (carried from day 13, and previously
       listed under 14.1): a case that extracts twice and diffs. The `extraction.reasoning_effort`
@@ -382,6 +398,36 @@ proven in both directions: green at 5/5 with 19 chunks indexed, and red with
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 14 (second pass)
+
+- **The ranking fix is proven on the fixture and not on the contract.** Both golden questions
+  reached rank 1 on the 8-page mock lease after the front page stopped being indexed. The real
+  38-page lease had them at 5th and 3rd of 8, and it has 221 chunks to the fixture's 19 — removing
+  one attractor is necessary there and may well not be sufficient. **Re-ingest on staging and
+  re-measure before believing this generalises**; if it does not, hybrid retrieval is the named
+  next candidate and it is its own slice, not a patch to this one.
+- **A question about a *different building* is grounded in our own clause.**
+  `כמה עולה מנוי לחדר הכושר במתחם השכן?` shares three real content words with `נספח ב׳ §5`, and a
+  term-overlap signal cannot see which building is meant. Left alone deliberately rather than
+  contorted around one probe — it belongs to 14.2's ~30 cases and to week 4's prompt.
+- **The grounding rule misses a plural formed by a suffix.** `דירות` is `דירה` with the ה
+  replaced, and a common-prefix test cannot span it. Normalizing `ות`→`ה` was tried in the
+  reasoning and rejected on the measurement: it makes `שעה` match `שעות המנוחה`, and the
+  technician question then grounds in the lease's quiet-hours rule instead of the entry procedure.
+  The failure direction is a refusal, which is the safe one.
+- **A withdrawn policy file is never deleted.** `syncGuidance` replaces what the source offers and
+  leaves alone what it no longer does, so removing `docs/guidance/x.md` leaves its sections
+  searchable until someone empties the table by hand. Belongs with week 5's catalog admin.
+- **Nothing checks that an environment's guidance matches the repo.** `npm run guidance` is a
+  human step by design (a deploy must not depend on a model provider), which means a deployed
+  staging can silently be a version behind `docs/guidance/`. A boot line reporting the checksum
+  would close it cheaply.
+- **The `model` column records the configured model id, not the embedder that produced the
+  vector.** True of `occupancy_chunk_embeddings` since 12.2 and now of the guidance table too, so
+  a contract test running the fake embedder writes rows a search cannot tell from real ones.
+  Harmless in CI, where the database dies with the job; locally it is residue, and `npm run reset`
+  now clears the guidance half of it.
 
 ## Carried in from day 14
 

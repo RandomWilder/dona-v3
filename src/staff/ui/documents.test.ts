@@ -559,8 +559,8 @@ describe('lease chunks at the edge', () => {
         headers: { cookie },
       });
       assert.equal(empty.statusCode, 200);
-      assert.ok(empty.body.includes('חיפוש בסעיפי החוזה'));
-      assert.ok(!empty.body.includes('לא נמצאו סעיפים'));
+      assert.ok(empty.body.includes('שאלה על הדירה'));
+      assert.ok(!empty.body.includes('אין לכך מענה'));
 
       const found = await app.inject({
         method: 'GET',
@@ -569,6 +569,25 @@ describe('lease chunks at the edge', () => {
       });
       assert.equal(found.statusCode, 200);
       assert.ok(found.body.includes('Rent is payable monthly'));
+      // Slice 14.1b: the page says *where* the answer was allowed to come from.
+      assert.ok(found.body.includes('החוזה של הדירה הזו'));
+
+      // And the third outcome, at the edge rather than only in the unit tests:
+      // a question neither this lease nor the company's guidance speaks to is
+      // refused, and the screen says so rather than showing an empty list.
+      //
+      // Worded to share no word with this fixture, which is harder in English
+      // than it looks: the rule's stopword list is Hebrew, so `the` counts as a
+      // content term here and matches every page of a Latin document. Nothing
+      // in production is English, and tuning the rule to a test fixture is the
+      // thing not to do.
+      const refused = await app.inject({
+        method: 'GET',
+        url: `${base}?q=${encodeURIComponent('Which orchestra performed yesterday evening?')}`,
+        headers: { cookie },
+      });
+      assert.equal(refused.statusCode, 200);
+      assert.ok(refused.body.includes('אין לכך מענה בחוזה או בנהלים'));
 
       // The tenancy the search filters on is resolved from the unit on the
       // server, so a URL that pairs this document with a *different* unit is a

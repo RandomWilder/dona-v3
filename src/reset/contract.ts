@@ -67,6 +67,23 @@ export const truncatedTables = [
   // a review of a field of a document that is gone is not a record of anything,
   // and leaving it would make the next re-seed's first extraction look reviewed.
   'occupancy_lease_field_reviews',
+  // Slice 14.1b. Company policy, and the one entry on this list that holds no
+  // tenant data at all -- every word of it was written by us and lives in
+  // `docs/guidance/` in git. It is emptied for the opposite reason to the rows
+  // above: not because it is a place a real lease lives, but because it is
+  // **fully derivable from the repo**, so emptying it loses nothing and
+  // `npm run guidance` puts it back in seconds. That is what separates it from
+  // `config_settings`, which is preserved because it holds a choice an
+  // environment was deliberately given and no file can restore.
+  //
+  // It also keeps the golden set honest locally: the contract tests write
+  // guidance rows, the corpus the retrieval cases are graded against reads every
+  // guidance row there is, and a reset is the only thing that clears them.
+  // All three in one TRUNCATE, for the reason the chunk tables are: the list
+  // refuses to use CASCADE.
+  'catalog_guidance_documents',
+  'catalog_guidance_chunks',
+  'catalog_guidance_embeddings',
   'idempotency_keys',
 ] as const;
 

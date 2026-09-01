@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 import multipart from '@fastify/multipart';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import {
+  createCatalog,
+  createDirectorySource,
+} from '../../catalog/contract.ts';
+import { createChannel } from '../../channel/contract.ts';
 import { createIdentity } from '../../identity/contract.ts';
 import { createAuditLog } from '../../kernel/audit.ts';
 import { type Clock, systemClock } from '../../kernel/clock.ts';
@@ -191,7 +196,23 @@ export function registerStaffUi(app: FastifyInstance, deps: StaffDeps): void {
     embedder: deps.embedder,
     extractor: deps.extractor,
   });
-  const guarded = { identity, portfolio, occupancy, pool: deps.pool, clock };
+  // Slice 14.1b. Policy is org-wide, so the catalog needs no tenancy and no
+  // session -- and `channel` is what puts the two corpora in order.
+  const catalog = createCatalog({
+    pool: deps.pool,
+    clock,
+    embedder: deps.embedder,
+    source: createDirectorySource(),
+  });
+  const channel = createChannel({ occupancy, catalog });
+  const guarded = {
+    identity,
+    portfolio,
+    occupancy,
+    channel,
+    pool: deps.pool,
+    clock,
+  };
   const commands = createStaffCommands(guarded);
   const queries = createStaffQueries(guarded);
 
