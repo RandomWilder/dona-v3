@@ -4,7 +4,7 @@
   "input": { "message": "עד מתי חוזה השכירות?" },
   "retrieval": {
     "expectRef": "נספח א׳ §5",
-    "rankAtMost": 2,
-    "note": "Measured at rank 2 on 2026-09-01: the front-page chunk beats it, 0.358 to 0.454. That is the attractor hypothesis reproduced — an unciteable chunk of parties and addresses winning a question about the term. Slice 12.2 measured this question at 3rd of 8 on the real lease, distance 0.428."
+    "rankAtMost": 1,
+    "note": "Rank 2 → rank 1, and this one is the proof 14.1b is a fix rather than a change. The front-page chunk beat it outright, 0.358 to 0.454 — an uncitable chunk of parties and ID numbers winning a question about the lease term. It is no longer embedded, and the clause that states the term now wins its own question by 0.016 over \u00a72.1\u20132.3 \u2014 narrower headroom than the rent case's 0.062, and still more than twice the 0.006 the embedder's own jitter can move a distance. Slice 12.2 measured this question at 3rd of 8 on the real lease, distance 0.428."
   }
 }

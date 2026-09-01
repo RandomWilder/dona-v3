@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { Channel } from '../../channel/contract.ts';
 import type {
   AddPersonInput,
   AddPhoneInput,
@@ -43,6 +44,12 @@ export interface StaffCommandDeps {
   identity: Identity;
   portfolio: Portfolio;
   occupancy: Occupancy;
+  // Slice 14.1b. The ordering rule -- lease, then policy, then a refusal --
+  // reached through its contract like the rest. The screen asks `channel` what
+  // a question may be answered from rather than asking `occupancy` for clauses
+  // and deciding for itself, because deciding for itself is how a second copy
+  // of the refusal rule gets written.
+  channel: Channel;
   // The edge's own audit rows go here; the domain modules keep writing theirs.
   pool: Pool;
   audit?: AuditLog;

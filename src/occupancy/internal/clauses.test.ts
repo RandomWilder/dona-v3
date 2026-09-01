@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PdfPage, PdfTextItem } from '../../kernel/pdf.ts';
-import { chunkLease, maxChunkChars } from './clauses.ts';
+import { chunkLease, isRetrievable, maxChunkChars } from './clauses.ts';
 
 // Pure unit tests, and the bulk of this slice's tests, because this is where
 // the failures are: line assembly, the two-column annex, an annex boundary, a
@@ -51,6 +51,22 @@ function filler(y: number): PdfTextItem {
   );
 }
 
+// A run in the label column of a two-column annex, and one in the value column.
+// Wider than `labelled`'s cells, because the braid only appears when a cell is
+// wide enough to wrap.
+function labelRun(y: number, text: string): PdfTextItem {
+  return run(330, y, text, 200);
+}
+
+function valueRun(y: number, text: string): PdfTextItem {
+  return run(90, y, text, 200);
+}
+
+// A line spanning both columns: the annex's title, and the prose under it.
+function spanning(y: number, text: string): PdfTextItem {
+  return run(90, y, text, 440);
+}
+
 // A נספח א׳ row: the label on the right, its value in the left column, both on
 // one baseline. This is the layout the reference note names as the reason
 // clause-aware chunking is required rather than merely tidier.
@@ -89,6 +105,72 @@ describe('clause chunking', () => {
     // And the value never appears loose, which is what a wrong pairing looks
     // like from the outside.
     assert.doesNotMatch(text, /\n4,200/);
+  });
+
+  it('reads a wrapped two-column row as one label and one value, not as a braid', () => {
+    // The half of the two-column annex 12.1 left standing, recorded in
+    // tasks/evidence/day-12-embeddings.md: when a label cell wraps and its value
+    // cell wraps too, the two columns' lines fall at slightly different heights
+    // and reading by baseline interleaves them --
+    //
+    //     תקופת השכירות הראשונה ומועדי: החל מיום 1 במרץ 2026
+    //     תחילתה וסיומה: ועד יום 28 בפברואר 2029
+    //
+    // The dates survive, which is why 13.1 could read this clause at all, and
+    // the label's sentence is cut in half with a value pushed through it.
+    const { chunks } = chunkLease([
+      page(15, [
+        spanning(40, 'נספח א׳ — פרטי העסקה'),
+        labelRun(70, 'סעיף 5 – תקופת השכירות'),
+        labelRun(100, 'תקופת השכירות הראשונה ומועדי'),
+        valueRun(105, 'החל מיום 1 במרץ 2026'),
+        labelRun(120, 'תחילתה וסיומה'),
+        valueRun(125, 'ועד יום 28 בפברואר 2029'),
+        labelRun(160, 'תקופות הארכה נוספות'),
+        valueRun(163, 'שתי אופציות בנות 24 חודשים'),
+        spanning(
+          200,
+          'הצדדים מצהירים כי קראו את ההסכם, הבינו את תוכנו ואת מלוא התחייבויותיהם.',
+        ),
+      ]),
+    ]);
+    const clause = chunks.find((chunk) => chunk.clauseRef === 'נספח א׳ §5');
+    assert.ok(clause);
+    // The label is one sentence again, and its value is whole and attached.
+    assert.match(
+      clause.text,
+      /תקופת השכירות הראשונה ומועדי תחילתה וסיומה: החל מיום 1 במרץ 2026 ועד יום 28 בפברואר 2029/,
+    );
+    assert.match(
+      clause.text,
+      /תקופות הארכה נוספות: שתי אופציות בנות 24 חודשים/,
+    );
+    // And the braid itself, named so a regression is legible rather than a
+    // diff of two long Hebrew strings.
+    assert.doesNotMatch(clause.text, /ומועדי: /);
+    assert.doesNotMatch(clause.text, /\nתחילתה וסיומה/);
+  });
+
+  it('does not read a page of prose as a table', () => {
+    // The risk the column split carries: a page that happens to hold one wide
+    // gap must not be re-read as a label/value table, because every line of it
+    // would then be bound to the line above.
+    const { chunks } = chunkLease([
+      page(3, [
+        line(60, '8. ביטוח'),
+        line(
+          90,
+          '8.1. השוכר יבטח את תכולת הדירה בפוליסה בת תוקף לכל תקופת השכירות.',
+        ),
+        run(150, 120, 'סכום הביטוח', 90),
+        line(150, '8.2. המשכיר יבטח את מבנה הבניין ואת הרכוש המשותף בלבד.'),
+        line(180, '8.3. כל צד יישא בהשתתפות העצמית של הפוליסה שלו.'),
+        filler(210),
+      ]),
+    ]);
+    const text = chunks.map((chunk) => chunk.text).join('\n');
+    assert.match(text, /8\.1\. השוכר יבטח/);
+    assert.doesNotMatch(text, /: 8\./);
   });
 
   it('carries the annex into the reference, because numbering restarts in each', () => {
@@ -355,6 +437,26 @@ describe('clause chunking', () => {
     assert.match(first?.text ?? '', /למגורים בלבד/);
   });
 
+  it("does not take an annex's own preamble for a new annex", () => {
+    // `נספח זה מפרט...` -- "this annex sets out..." -- opens an annex's preamble
+    // constantly. Read as a marker it becomes an annex lettered ז, and every
+    // clause after it is cited `נספח זה §…`: an annex that does not exist.
+    const { chunks } = chunkLease([
+      page(14, [
+        line(60, 'נספח א׳ — פרטי העסקה'),
+        line(
+          90,
+          'נספח זה מפרט את התנאים המסחריים של העסקה וגובר על הוראות ההסכם.',
+        ),
+        line(120, 'סעיף 5 – תקופת השכירות מתחילה ביום 15/08/2025.'),
+        filler(150),
+      ]),
+    ]);
+    const refs = chunks.map((chunk) => chunk.clauseRef);
+    assert.ok(!refs.some((ref) => ref?.includes('נספח זה')));
+    assert.deepEqual(refs, ['נספח א׳', 'נספח א׳ §5']);
+  });
+
   it('does not fold a heading across an annex boundary', () => {
     const { chunks } = chunkLease([
       page(14, [
@@ -371,5 +473,78 @@ describe('clause chunking', () => {
     // clause about the term.
     assert.equal(chunks[0]?.clauseRef, 'נספח א׳');
     assert.equal(chunks[1]?.clauseRef, 'נספח א׳ §5');
+  });
+});
+
+describe('what retrieval may reach', () => {
+  it('leaves a preamble out of the index without dropping it from the document', () => {
+    const { chunks } = chunkLease([
+      page(1, [
+        line(60, 'הסכם שכירות למגורים שנערך ונחתם בתל אביב'),
+        line(90, 'בין: חברת דיור להשכרה בע״מ, ח.פ. 515248871, מרחוב הנשיא 8'),
+        line(120, 'לבין: ישראל ישראלי, ת.ז. 039284715, טלפון 050-1234567'),
+        filler(150),
+      ]),
+      page(2, [
+        line(60, '1. מבוא, נספחים והגדרות'),
+        line(
+          90,
+          '1.1. המבוא להסכם זה והנספחים המצורפים לו מהווים חלק בלתי נפרד.',
+        ),
+        filler(120),
+      ]),
+    ]);
+    const preamble = chunks.find((chunk) => chunk.clauseRef === null);
+    // Still a chunk, still holding its text: the document is complete on the
+    // screen. What it does not get is a vector.
+    assert.ok(preamble);
+    assert.match(preamble.text, /ישראל ישראלי/);
+    assert.equal(isRetrievable(preamble), false);
+    const clause = chunks.find((chunk) => chunk.clauseRef === '§1.1');
+    assert.ok(clause);
+    assert.equal(isRetrievable(clause), true);
+  });
+
+  it('leaves an annex heading that says nothing but its own name out of the index', () => {
+    const { chunks } = chunkLease([
+      page(14, [
+        line(60, 'נספח א׳ — פרטי העסקה'),
+        line(
+          90,
+          'סעיף 5 – תקופת השכירות מתחילה ביום 15/08/2025 ומסתיימת בתום התקופה.',
+        ),
+        filler(130),
+      ]),
+    ]);
+    // 12.1's decision stands -- the heading is not folded into `§5`, because an
+    // annex heading is not the parent of the clauses inside it and merging them
+    // would cite an annex's preamble as the clause about the term. It is simply
+    // not something a search can return.
+    const [heading, clause] = chunks;
+    assert.ok(heading && clause);
+    assert.equal(heading.clauseRef, 'נספח א׳');
+    assert.equal(isRetrievable(heading), false);
+    assert.equal(isRetrievable(clause), true);
+  });
+
+  it('keeps an annex that has a real preamble in the index', () => {
+    const { chunks } = chunkLease([
+      page(14, [
+        line(60, 'נספח א׳ — פרטי העסקה'),
+        line(
+          90,
+          'נספח זה מפרט את התנאים המסחריים של העסקה וגובר על הוראות ההסכם.',
+        ),
+        line(120, 'המונחים בו יפורשו כמשמעותם בהסכם אלא אם נאמר במפורש אחרת.'),
+        filler(150),
+      ]),
+    ]);
+    // The heading and the prose under it are one chunk, and the prose is text a
+    // question could legitimately land on. Saying more than its own name is the
+    // whole test.
+    const [annex] = chunks;
+    assert.ok(annex);
+    assert.equal(annex.clauseRef, 'נספח א׳');
+    assert.equal(isRetrievable(annex), true);
   });
 });

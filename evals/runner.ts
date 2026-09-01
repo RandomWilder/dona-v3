@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   type AgentTurn,
   type GoldenCase,
+  type GroundedAnswer,
+  type Grounder,
   parseCase,
   type RankedHit,
   type Retriever,
@@ -38,6 +40,8 @@ export interface Report {
 export interface Subjects {
   answer: Subject;
   retrieve?: Retriever;
+  /** Grades grounding cases. Needs what `retrieve` needs, and skips likewise. */
+  ground?: Grounder;
 }
 
 export async function loadCases(dir = goldenDir): Promise<GoldenCase[]> {
@@ -113,13 +117,57 @@ export function gradeRetrieval(
   return [];
 }
 
+/** The grounding grade: which corpus answered, and what it would cite. */
+export function gradeGrounding(
+  golden: GoldenCase,
+  answer: GroundedAnswer,
+): string[] {
+  const grounding = golden.grounding;
+  if (!grounding) return ['not a grounding case'];
+
+  const failures: string[] = [];
+  if (answer.source !== grounding.expectSource) {
+    failures.push(
+      `expected the answer to come from ${grounding.expectSource}, got ${answer.source}` +
+        (answer.hits.length > 0
+          ? ` (${answer.hits.map((hit) => hit.ref).join(', ')})`
+          : ''),
+    );
+  }
+  // Escalation and source are one fact stated twice, and a caller reading only
+  // one of them is a caller that answers anyway -- so the gate checks they
+  // agree rather than trusting that they must.
+  if (answer.escalate !== (answer.source === 'none')) {
+    failures.push(
+      `escalate=${answer.escalate} disagrees with source=${answer.source}`,
+    );
+  }
+  if (grounding.expectSource === 'none' && answer.hits.length > 0) {
+    failures.push(
+      `a refusal returned ${answer.hits.length} passages to cite anyway`,
+    );
+  }
+  if (grounding.expectRef !== undefined) {
+    const top = answer.hits[0]?.ref;
+    if (top !== grounding.expectRef) {
+      failures.push(
+        `expected to cite ${grounding.expectRef}, got ${top ?? 'nothing'}`,
+      );
+    }
+  }
+  return failures;
+}
+
 export async function runCases(
   cases: GoldenCase[],
   subjects: Subjects,
 ): Promise<Report> {
   const results: CaseResult[] = [];
   for (const golden of cases) {
-    if (golden.retrieval && !subjects.retrieve) {
+    if (
+      (golden.retrieval && !subjects.retrieve) ||
+      (golden.grounding && !subjects.ground)
+    ) {
       results.push({
         id: golden.id,
         title: golden.title,
@@ -134,12 +182,19 @@ export async function runCases(
     // case must never hide the verdict on the rest.
     let failures: string[];
     try {
-      failures = golden.retrieval
-        ? gradeRetrieval(
-            golden,
-            await (subjects.retrieve as Retriever)(golden.input),
-          )
-        : gradeTurn(golden, await subjects.answer(golden.input));
+      if (golden.retrieval) {
+        failures = gradeRetrieval(
+          golden,
+          await (subjects.retrieve as Retriever)(golden.input),
+        );
+      } else if (golden.grounding) {
+        failures = gradeGrounding(
+          golden,
+          await (subjects.ground as Grounder)(golden.input),
+        );
+      } else {
+        failures = gradeTurn(golden, await subjects.answer(golden.input));
+      }
     } catch (error) {
       failures = [
         `subject threw: ${error instanceof Error ? error.message : 'unknown'}`,

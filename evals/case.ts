@@ -3,15 +3,19 @@
 // was the answer refused — not on final-text equality, so cases survive the
 // agent's wording changing (PIPELINE.md §6).
 //
-// There are two kinds of case, and a file is exactly one of them:
+// There are three kinds of case, and a file is exactly one of them:
 //
 //   - a **behavioural** case, carrying `expect`, graded against an agent turn;
 //   - a **retrieval** case, carrying `retrieval`, graded against the ordered
-//     result set `searchClauses` returned for the question (slice 14.1a).
+//     result set `searchClauses` returned for the question (slice 14.1a);
+//   - a **grounding** case, carrying `grounding`, graded against what `channel`
+//     decided the question may be answered from -- the lease, the company's
+//     policy, or nothing at all (slice 14.1b).
 //
 // The second kind exists because ranking is a measured defect rather than a
-// suspicion, and a defect with no instrument is a feeling. See the ratchet
-// below.
+// suspicion, and a defect with no instrument is a feeling. The third exists
+// because a refusal is the slice's central claim and is not observable in a
+// rank: a question can retrieve eight clauses and still have no answer.
 
 export interface CaseInput {
   message: string;
@@ -49,6 +53,25 @@ export interface RetrievalExpectation {
   note?: string;
 }
 
+// A grounding case asserts **where an answer was allowed to come from**, and
+// which passage it would cite.
+//
+// `expectSource: 'none'` is the refusal case -- the one the slice's own Verify
+// step names. It asserts that a question with no grounding is escalated rather
+// than answered, which no rank can express: the clauses came back, and none of
+// them answered anything.
+export interface GroundingExpectation {
+  /** `lease`, `policy`, or `none` for a refusal. */
+  expectSource: 'lease' | 'policy' | 'none';
+  /**
+   * The citation the top passage must carry, spelled as the chunker spells it.
+   * Omitted on a refusal, where there is nothing to cite.
+   */
+  expectRef?: string;
+  /** Free text: where the expectation came from, so the file explains itself. */
+  note?: string;
+}
+
 export interface GoldenCase {
   id: string;
   title: string;
@@ -57,6 +80,8 @@ export interface GoldenCase {
   expect?: Expectation;
   /** Present on a retrieval case. */
   retrieval?: RetrievalExpectation;
+  /** Present on a grounding case. */
+  grounding?: GroundingExpectation;
 }
 
 /** One turn produced by the thing under test. */
@@ -73,8 +98,16 @@ export interface RankedHit {
   distance: number;
 }
 
+/** What `channel` decided about one question, as the grader reads it. */
+export interface GroundedAnswer {
+  source: 'lease' | 'policy' | 'none';
+  hits: { ref: string }[];
+  escalate: boolean;
+}
+
 export type Subject = (input: CaseInput) => Promise<AgentTurn>;
 export type Retriever = (input: CaseInput) => Promise<RankedHit[]>;
+export type Grounder = (input: CaseInput) => Promise<GroundedAnswer>;
 
 // Golden cases are data files edited by hand, so they are an edge: validate
 // them (SPEC.md, "validate all inputs at the edge") rather than trusting the
@@ -96,25 +129,36 @@ export function parseCase(raw: unknown, source: string): GoldenCase {
     fail('input.message must be a non-empty string');
   }
 
-  // Exactly one kind, checked before either is read. A file carrying both would
-  // be graded twice against two different subjects; one carrying neither would
-  // pass by asserting nothing, which is the failure mode a gate cannot have.
-  const hasExpect = value.expect !== undefined;
-  const hasRetrieval = value.retrieval !== undefined;
-  if (hasExpect === hasRetrieval) {
-    fail('a case must carry exactly one of expect or retrieval');
+  // Exactly one kind, checked before any of them is read. A file carrying two
+  // would be graded twice against two different subjects; one carrying none
+  // would pass by asserting nothing, which is the failure mode a gate cannot
+  // have.
+  const kinds = ['expect', 'retrieval', 'grounding'].filter(
+    (key) => value[key] !== undefined,
+  );
+  if (kinds.length !== 1) {
+    fail('a case must carry exactly one of expect, retrieval or grounding');
   }
 
   const id = text('id');
   const title = text('title');
   const message = (input as Record<string, string>).message;
 
-  if (hasRetrieval) {
+  if (kinds[0] === 'retrieval') {
     return {
       id,
       title,
       input: { message },
       retrieval: parseRetrieval(value.retrieval, fail),
+    };
+  }
+
+  if (kinds[0] === 'grounding') {
+    return {
+      id,
+      title,
+      input: { message },
+      grounding: parseGrounding(value.grounding, fail),
     };
   }
 
@@ -173,6 +217,40 @@ function parseRetrieval(
   return {
     expectRef: value.expectRef,
     rankAtMost: value.rankAtMost,
+    note: value.note as string | undefined,
+  };
+}
+
+function parseGrounding(
+  raw: unknown,
+  fail: (why: string) => never,
+): GroundingExpectation {
+  if (typeof raw !== 'object' || raw === null) {
+    fail('grounding must be an object');
+  }
+  const value = raw as Record<string, unknown>;
+  const sources = ['lease', 'policy', 'none'];
+  if (
+    typeof value.expectSource !== 'string' ||
+    !sources.includes(value.expectSource)
+  ) {
+    fail(`grounding.expectSource must be one of ${sources.join(', ')}`);
+  }
+  // A refusal has nothing to cite, and a case that named one would be asserting
+  // two contradictory things -- caught here rather than at grading time, where
+  // the failure would read as a retrieval problem.
+  if (value.expectSource === 'none' && value.expectRef !== undefined) {
+    fail('a refusal case cannot expect a citation');
+  }
+  if (value.expectRef !== undefined && typeof value.expectRef !== 'string') {
+    fail('grounding.expectRef must be a string when present');
+  }
+  if (value.note !== undefined && typeof value.note !== 'string') {
+    fail('grounding.note must be a string when present');
+  }
+  return {
+    expectSource: value.expectSource as 'lease' | 'policy' | 'none',
+    expectRef: value.expectRef as string | undefined,
     note: value.note as string | undefined,
   };
 }

@@ -4,7 +4,7 @@
   "input": { "message": "מה גובה דמי השכירות?" },
   "retrieval": {
     "expectRef": "נספח א׳ §10",
-    "rankAtMost": 2,
-    "note": "Measured at rank 1 on 2026-09-01, and ratcheted to 2 on purpose. Its lead over the front-page chunk is 0.008, and re-embedding the same text moves a distance by up to 0.006 — so a ratchet of 1 would be a coin flip in CI. One place of headroom against a flake, and 14.1b still has to reach 1 to prove a fix. Slice 12.2 measured this question at 5th of 8 on the real lease."
+    "rankAtMost": 1,
+    "note": "Rank 1, ratcheted to 1 by slice 14.1b. It measured rank 1 before too, but was held at 2 because its 0.008 lead over the front-page chunk sat inside the embedder\u0027s own 0.006 jitter — a coin flip in CI. The front page is no longer indexed at all (it carries no clause reference, so nothing could ever cite it), so the nearest competitor is now 0.062 away and the ratchet is safe at 1. Slice 12.2 measured this question at 5th of 8 on the real lease."
   }
 }

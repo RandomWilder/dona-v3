@@ -295,6 +295,30 @@ It shows the clause reference, the pages and the distance — not an answer. Tur
 Hebrew sentence with a citation is week 4's agent; this surface exists so a human can verify that
 the right clause came back, which is the whole of slice 12.2's bar.
 
+**Rewired in slice 14.1b: it asks `channel`, not `occupancy`.** The question now goes through
+`groundQuestion`, so the screen shows *where the answer was allowed to come from* — this flat's
+lease, the company's guidance, or nothing — rather than eight clauses from one document. The
+heading changed with it (`שאלה על הדירה`), because the field no longer searches only the contract.
+
+Nothing about the access rule moved: it still rides inside `getDocumentChunks`, still `read`, still
+audited on the same row, and the tenancy is still resolved server-side from the unit. What changed
+is which module decides, and that is the point — a screen that asked for clauses and chose between
+them itself would be the second copy of the refusal rule.
+
+**A refusal is rendered as a decision, not as an empty result.** `אין לכך מענה בחוזה או בנהלים` and
+a line saying the question goes to the office. An operator reading *"no matching clauses"* would go
+looking for a bug in retrieval; what actually happened is that the system declined to answer, which
+is the behaviour week 3 exists to produce.
+
+### The chunks list says how much of itself is searchable (slice 14.1b)
+
+Since 14.1b a chunk with no clause reference, and a chunk that is nothing but its own heading, are
+stored and never embedded (`SPEC-occupancy.md`). So the list's count and the search's reach are two
+different numbers, and the page prints both — `19 סעיפים (16 ניתנים לחיפוש)`, with the excluded ones
+marked `לא נכלל בחיפוש` where they sit. One number for both would be a screen asserting more than
+the thing behind it can support, which this page has already got wrong once (12.1's
+*"בכל העמודים נמצא טקסט"*).
+
 ## Reading the lease's fields (slice 13.1)
 
 A second button on the same page, and a section above the clauses that shows what came out.

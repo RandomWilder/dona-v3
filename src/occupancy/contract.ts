@@ -2,7 +2,10 @@
 // past this file — internals live under `internal/`. See SPEC-occupancy.md.
 
 export type { LeaseChunk } from './internal/clauses.ts';
-export { maxChunkChars } from './internal/clauses.ts';
+// Slice 14.1b. Exported because a screen showing a document's chunks has to be
+// able to say which of them a search can reach -- a count that says 19 where a
+// search sees 16 is the kind of all-clear 12.1 already got wrong once.
+export { isRetrievable, maxChunkChars } from './internal/clauses.ts';
 // Promoted in slice 8.1, for the same reason normalizePhone was: the importer
 // must reject a bad date before it writes, and a second copy of the rule would
 // drift from the one the commands enforce.

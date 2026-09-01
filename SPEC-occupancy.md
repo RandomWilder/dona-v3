@@ -390,6 +390,41 @@ required**: `נספח י״א §2.2.4` is a real clause without one. **A previous
 mid-sentence is not damning either**: clause text wraps constantly. Only the pair is
 conclusive — a bare number, no separator, and a line above still in the middle of a sentence.
 
+**A third phantom, found in 14.1b: the annex marker had the same disease.** `נספח` followed by one
+or two Hebrew letters read `נספח זה מפרט את התנאים…` — *"this annex sets out the terms"*, the way an
+annex's own preamble opens — as an annex lettered ז. Everything after it was then numbered
+`נספח זה §…`: a citation naming an annex that does not exist. The marker now has to *look* like a
+marker — a letter carrying a geresh or gershayim (`א׳`, `י״ב`), or a single letter standing alone —
+and not merely start like one. Same fix as the bare number's, one level up.
+
+### The two-column annex, second pass (slice 14.1b)
+
+12.1 bound a value to the label on its own baseline, which stopped a lease answering "what is the
+rent" with the maintenance fee. It left the other half standing, and the day-12 evidence named it:
+when a **label cell wraps and its value cell wraps too**, the two columns' lines fall at slightly
+different heights and reading by baseline interleaves them.
+
+```
+תקופת השכירות הראשונה ומועדי: החל מיום 1 במרץ 2026
+תחילתה וסיומה: ועד יום 28 בפברואר 2029
+```
+
+The dates survive — which is why 13.1 could read this clause at all — and the label's sentence is cut
+in half with a value pushed through the middle of it. `נספח א׳ §5` is the clause the twin reads, so
+it is worth a second pass rather than a carry line.
+
+**A baseline stops being a line on such a page.** `splitColumns` looks for a corridor: a vertical gap
+at least as wide as `joinRow`'s own column gap, with at least three lines on each side and almost
+nothing crossing it. Found, each column is assembled into **cells** rather than rows — lines a normal
+line-height apart are one cell that wrapped, a bigger step down the page is the next row of the table
+— and each label takes the value cell beside it. Not found, the page is read exactly as it was
+before, which is every page of prose in the document.
+
+**It is a heuristic and it says so.** The threshold for "the next row" is two glyph heights, a blank
+line's worth, because a one-line cell offers no line pitch to measure. The test that pins it builds
+the braid out of geometry and asserts it is gone; the document that decides whether it generalises is
+the real 38-page lease, re-ingested on staging.
+
 ### A heading is not a clause
 
 `§6` on its own is the line *"6. מטרת השכירות וייחודה"* and nothing else. On the real lease it
@@ -607,11 +642,47 @@ and the ranking defect are one problem.
 to `0.006` (mean `0.001`, 48 paired observations) while leaving every rank identical. Anything that
 asserts on retrieval — a golden case, a threshold, a screen — must read order and not magnitude.
 
+### Decided, slice 14.1b: an uncitable chunk is stored and never indexed
+
+14.1a's attractor is not down-weighted, re-cut or re-scored. **A chunk with no clause reference is
+not embedded at all**, so it cannot be retrieved, and the text it holds never leaves this
+infrastructure.
+
+The argument is one argument wearing two hats, and both were measured rather than assumed:
+
+- **Accuracy.** The front page is a long heterogeneous chunk that sits close to every question. It
+  won a question about the lease term outright. Nothing downstream could ever have used it: a
+  citation cannot name it, and this system's whole stance is that an answer is only as good as the
+  clause it points at.
+- **Privacy.** It is also the PII-densest text in the document — both parties' names, two ID
+  numbers, a phone, an email, two addresses. Not embedding it means those never reach the embedding
+  provider. This is the **identical rule `twin.ts` already applies to extraction** (see "Which
+  clauses are sent is decided by clause reference, never by similarity"), reached from the other
+  direction: selection requires a clause number, the front page has none.
+
+**Stored, not indexed** — the distinction is the whole design. `ingestDocument` still writes every
+chunk row, so `listChunks` still shows the front page, the document's text is still complete on the
+screen, and `page_count` / `image_only_pages` still describe the real document. What changes is
+which rows get a vector.
+
+**A chunk that says nothing but its own heading is not indexed either.** `נספח א׳` on its own is
+the line `נספח א׳ — פרטי העסקה`; retrieval that can return it is retrieval that can answer a question
+with a table of contents — the argument 12.1 already made for a bare parent heading (`§6`). It is
+**not folded** into the annex's first clause: 12.1's decision stands, because an annex heading is not
+the parent of the clauses inside it and merging them would cite an annex's preamble as the clause
+about the term. An annex that *has* a preamble says more than its heading and stays indexed; one
+that is a title and a page break does not.
+
+**Reversing it is a re-ingest, not a migration.** Ingestion is idempotent by replacement, so a
+document read again under a later rule is simply re-indexed. A document *not* re-read keeps the
+vectors it already has — stated because it means the rule holds for documents ingested from here,
+and the fleet is made consistent by re-ingesting rather than by a backfill.
+
 ### What is deliberately not here
 
-- **Ranking across lease → policy → refuse.** Slice 14.1b. This searches one tenancy's documents
-  and stops — and as of 14.1a it is measured, so the change that lands there has a number to beat
-  rather than a feeling to satisfy.
+- **Ranking across lease → policy → refuse.** `channel`'s, as of 14.1b: it composes this command
+  with `catalog`'s policy search, because ordering two corpora is neither module's business. This
+  command searches one tenancy's documents and stops.
 - **An answer.** `searchClauses` returns clauses, not prose. The agent that turns them into a
   Hebrew sentence with a citation is week 4, and SPEC.md rule 2 keeps it a client of this command.
 - **Re-embedding on a model change.** The table can hold two models at once; nothing orchestrates

@@ -89,13 +89,18 @@ prod:    deploy → smoke → done   (rollback = re-deploy previous revision, on
 - **The feedback loop is the product**: production failure → becomes a golden case same day → CI blocks that failure forever → the correction is also the tenant-facing trust-repair flow. One mechanism, two payoffs.
 - Version the dataset in the repo (`evals/golden/*.json`); review diffs to it like code.
 
-**Two kinds of case, added in slice 14.1a.** A file carries exactly one of them, checked at parse:
+**Three kinds of case.** A file carries exactly one of them, checked at parse:
 
-- a **behavioural** case (`expect`) — graded against an agent turn: which tool ran, was a clause
-  cited, was the answer refused, does the text contain a required substring.
-- a **retrieval** case (`retrieval`) — graded against the ordered result set `searchClauses`
+- a **behavioural** case (`expect`, 14.1a) — graded against an agent turn: which tool ran, was a
+  clause cited, was the answer refused, does the text contain a required substring.
+- a **retrieval** case (`retrieval`, 14.1a) — graded against the ordered result set `searchClauses`
   returned for the question. It asserts `expectRef` (the clause that answers it) and
   `rankAtMost` (where in the list it must appear).
+- a **grounding** case (`grounding`, 14.1b) — graded against what `channel.groundQuestion` decided
+  a question may be answered from: `lease`, `policy`, or `none`. It asserts `expectSource` and, for
+  the first two, the `expectRef` the top passage must cite. **`expectSource: 'none'` is the refusal
+  case**, and it exists because a refusal is not observable in a rank: the question retrieves eight
+  clauses and none of them answers it. A refusal case may not name a citation, checked at parse.
 
 **`rankAtMost` is a ratchet, not a target.** It is set to the rank retrieval achieves *today*, so
 the gate blocks a regression from the first commit while staying green — and the proof that a

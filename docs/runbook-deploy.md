@@ -182,6 +182,43 @@ longer exists. The list, and the reasoning, live in `src/reset/contract.ts`.
 Staging only. There is no argument that points it at prod, and the script checks
 the connection name in the secret before it opens a tunnel to anything.
 
+**A reset now also empties the guidance tables** (slice 14.1b), so run
+`npm run guidance` after one — see the next section.
+
+## Load the company's guidance (slice 14.1b)
+
+The office's own policy documents — office hours, how a fault is reported, how
+entry to a flat is coordinated — live in `docs/guidance/*.md` in this repo and
+are loaded into the `catalog` tables by one command:
+
+```bash
+npm run guidance
+```
+
+Safe to run as often as you like: a file whose bytes have not changed is skipped
+without being embedded again, and a changed file is replaced rather than
+appended to. It prints what it read and what it skipped.
+
+**A deploy does not do this**, deliberately. Loading guidance means calling the
+embedding provider, and a deploy that depends on a third party is a deploy that
+fails when the third party is slow. The files are in git either way, so nothing
+is lost by loading them a minute later.
+
+**Run it after:**
+
+- editing anything under `docs/guidance/` and deploying it;
+- a staging reset, which empties these tables;
+- the first deploy of a fresh environment.
+
+**Against staging**, it is the same tunnel as everything else in the previous
+section — open the proxy, then point `DATABASE_URL` at `127.0.0.1:5433` and give
+the shell the environment's `OPENAI_API_KEY` from Secret Manager. Without a key
+the command fails loudly rather than loading a corpus nothing can search.
+
+If it is never run, the system still answers from a lease and still refuses; what
+it cannot do is answer anything the lease does not cover. That is a quieter
+failure than it sounds, which is why it is on this list.
+
 ## The staff login (slice 5.2)
 
 Bootstrap creates two secrets per environment — `<env>-staff-seed-email` and

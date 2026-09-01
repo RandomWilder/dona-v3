@@ -10,7 +10,11 @@ import type {
   LeaseFieldReview,
   OccupancyResolution,
 } from '../../occupancy/contract.ts';
-import { editableGroups, leaseFields } from '../../occupancy/contract.ts';
+import {
+  editableGroups,
+  isRetrievable,
+  leaseFields,
+} from '../../occupancy/contract.ts';
 import type {
   AssetKind,
   Building,
@@ -362,8 +366,19 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
   // two lists are one wall of identical cards -- the owner read eight search
   // hits followed by the full document as "about 150 results", which is a
   // reasonable thing to conclude from what the page was showing.
+  // Two counts and not one, since 14.1b. A chunk with no clause reference and a
+  // chunk that is nothing but its own heading are stored and never embedded, so
+  // a page reading "19 סעיפים" over a search that can see 16 of them is the same
+  // shape of all-clear 12.1 got wrong once already -- a screen asserting more
+  // than the thing behind it can support.
+  const searchable = detail.chunks.filter(isRetrievable).length;
   const body = detail.chunks.length
-    ? h`<h2 class="list-heading">כל הסעיפים במסמך · ${ltr(String(detail.chunks.length))}</h2>
+    ? h`<h2 class="list-heading">כל הסעיפים במסמך · ${ltr(String(detail.chunks.length))}
+          ${
+            searchable === detail.chunks.length
+              ? h``
+              : h`<span class="muted">(${ltr(String(searchable))} ניתנים לחיפוש)</span>`
+          }</h2>
         ${detail.chunks.map(
           (chunk) => h`<div class="card" id="clause-${chunk.id}">
             <p class="muted">
@@ -373,6 +388,11 @@ export function chunksPage(detail: DocumentChunks, context: PageContext): Html {
                   : h`<span class="muted">ללא מספור</span>`
               }
               · ${pageRange(chunk.pageFrom, chunk.pageTo)}
+              ${
+                isRetrievable(chunk)
+                  ? h``
+                  : h`· <span class="muted">לא נכלל בחיפוש</span>`
+              }
             </p>
             <p class="clause">${chunk.text}</p>
           </div>`,
@@ -778,10 +798,17 @@ function period(
   return h`${from ? h`מ־${stated(from)}` : h``} ${to ? h`עד ${stated(to)}` : h``}`;
 }
 
-// Ask this tenancy's lease a question. The thinnest surface that can prove the
-// slice: retrieval is a module command, and week 4's agent is what turns hits
-// into a Hebrew sentence -- this only shows which clauses came back and how far
-// each was, because that is what a human verifies a citation against.
+// Ask this tenancy a question. The thinnest surface that can prove the slice:
+// the ordering rule is a module command, and week 4's agent is what turns
+// passages into a Hebrew sentence -- this only shows *where the answer was
+// allowed to come from* and which passages, because that is what a human
+// verifies a citation against.
+//
+// Since 14.1b this asks `channel` rather than `occupancy`. Three outcomes, and
+// the screen renders all three as answers: the lease, the company's policy, or
+// nothing at all. The third is not an empty result and is not styled like one --
+// a refusal is what the system decided, and an operator reading "no matching
+// clauses" would go looking for a bug.
 //
 // A GET with the question in the query string, so a search is a link that can be
 // reloaded and shared, and so nothing here needs JavaScript.
@@ -792,20 +819,32 @@ function period(
 function searchCard(detail: DocumentChunks): Html {
   const action = `/admin/units/${detail.unit.unit.id}/documents/${detail.document.id}/chunks`;
   const asked = detail.search;
-  const results = !asked
-    ? h``
-    : asked.hits.length === 0
-      ? h`<p class="empty-state">לא נמצאו סעיפים מתאימים בחוזה הזה.</p>`
-      : h`<p class="muted">${ltr(String(asked.hits.length))} הסעיפים הקרובים ביותר לשאלה, מתוך החוזה הזה בלבד:</p>
-          <ol class="hits">${asked.hits.map(
+  const answer = asked?.grounding;
+  const results =
+    !asked || !answer
+      ? h``
+      : answer.source === 'none'
+        ? h`<p class="empty-state">
+            <strong>אין לכך מענה בחוזה או בנהלים.</strong>
+            השאלה מועברת למשרד.
+          </p>`
+        : h`<p class="muted">
+            ${
+              answer.source === 'lease'
+                ? h`מתוך <strong>החוזה של הדירה הזו</strong>`
+                : h`החוזה אינו עוסק בכך. מתוך <strong>נהלי המשרד</strong>`
+            }
+            · ${ltr(String(answer.hits.length))} קטעים
+          </p>
+          <ol class="hits">${answer.hits.map(
             (hit) => h`<li>
                 <p class="muted">
+                  ${clauseTag(hit.ref)}
                   ${
-                    hit.clauseRef
-                      ? clauseTag(hit.clauseRef)
-                      : h`<span class="muted">ללא מספור</span>`
+                    hit.pageFrom === undefined || hit.pageTo === undefined
+                      ? h``
+                      : h`· ${pageRange(hit.pageFrom, hit.pageTo)}`
                   }
-                  · ${pageRange(hit.pageFrom, hit.pageTo)}
                   · <span dir="ltr">${hit.distance.toFixed(3)}</span>
                 </p>
                 <p class="clause">${hit.text}</p>
@@ -813,7 +852,7 @@ function searchCard(detail: DocumentChunks): Html {
           )}</ol>`;
 
   return h`<div class="card">
-          <h2>חיפוש בסעיפי החוזה</h2>
+          <h2>שאלה על הדירה</h2>
           <form method="get" action="${action}" class="stack">
             <p class="field">
               <label for="f-q">שאלה</label>

@@ -1,15 +1,18 @@
 import type { Pool } from 'pg';
 import { resolveEmbedder } from '../src/boot.ts';
+import { createCatalog, createDirectorySource } from '../src/catalog/contract.ts';
+import { createChannel, type Grounding } from '../src/channel/contract.ts';
 import { newId } from '../src/kernel/ids.ts';
 import { createMemoryStore } from '../src/kernel/objects.ts';
 import type { PdfText } from '../src/kernel/pdf.ts';
 import { type Actor, createOccupancy } from '../src/occupancy/contract.ts';
 import { createPortfolio } from '../src/portfolio/contract.ts';
-import type { CaseInput, RankedHit, Retriever } from './case.ts';
+import type { CaseInput, Grounder, RankedHit, Retriever } from './case.ts';
 import { mockLeasePages } from './fixtures/mock-lease.ts';
 
-// The corpus a retrieval case is graded against: one tenancy, one indexed
-// lease, reached through the same commands an operator's screen uses.
+// The corpus a retrieval or grounding case is graded against: one tenancy, one
+// indexed lease, and the company's real policy documents, reached through the
+// same commands an operator's screen uses.
 //
 // Everything below pdfjs is the real path — attachDocument, ingestDocument,
 // chunkLease, the real embedder, real pgvector, searchClauses. Only two seams
@@ -25,9 +28,16 @@ export interface Corpus {
   tenancyId: string;
   documentId: string;
   chunks: number;
+  /** How many of those chunks a search can actually reach (slice 14.1b). */
+  indexed: number;
+  /** Policy sections indexed, org-wide, from `docs/guidance/` (slice 14.1b). */
+  sections: number;
   retrieve: Retriever;
+  ground: Grounder;
   /** Every hit for a question, for the measurement rather than the gate. */
   search(question: string): Promise<RankedHit[]>;
+  /** What `channel` would answer, for the measurement rather than the gate. */
+  grounding(question: string): Promise<Grounding>;
 }
 
 /** True when a real embedder can be built — a key is present. */
@@ -55,6 +65,16 @@ export async function buildCorpus(pool: Pool): Promise<Corpus> {
   // because this file needs to call it directly to place the building the lease
   // hangs off — and two constructions would be two audit writers on one pool.
   const portfolio = createPortfolio({ pool });
+  // The real policy files, not a fixture. Guidance is text we wrote and keep in
+  // the repo, so a golden case naming one of its headings is a case about the
+  // thing that ships -- and a heading somebody renames without thinking is a
+  // gate that goes red, which is the feedback loop working.
+  const catalog = createCatalog({
+    pool,
+    embedder,
+    source: createDirectorySource(),
+  });
+  await catalog.syncGuidance({ kind: 'system' });
   const occupancy = createOccupancy({
     pool,
     portfolio,
@@ -117,11 +137,24 @@ export async function buildCorpus(pool: Pool): Promise<Corpus> {
     }));
   }
 
+  const channel = createChannel({ occupancy, catalog });
+  const grounding = (question: string) =>
+    channel.groundQuestion({ tenancyId: tenancy.id, question });
+
+  const sections = (await catalog.listGuidance()).reduce(
+    (total, document) => total + document.chunks,
+    0,
+  );
+
   return {
     tenancyId: tenancy.id,
     documentId: document.id,
     chunks: ingestion.chunks,
+    indexed: ingestion.indexed,
+    sections,
     search,
+    grounding,
     retrieve: (input: CaseInput) => search(input.message),
+    ground: (input: CaseInput) => grounding(input.message),
   };
 }

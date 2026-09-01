@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pool } from 'pg';
+import { createCatalog } from '../catalog/contract.ts';
+import { createChannel } from '../channel/contract.ts';
 import { createIdentity } from '../identity/contract.ts';
 import { fixedClock } from '../kernel/clock.ts';
 import type { KernelError } from '../kernel/errors.ts';
@@ -52,20 +54,28 @@ function uniquePhone(): string {
   return `05${digits}`;
 }
 
-// The four modules as the admin panel sees them: three domain modules injected
-// as their contract types, behind one guarded surface.
+// The modules as the admin panel sees them: the domain modules injected as
+// their contract types, behind one guarded surface.
 function world(pool: Pool): StaffCommands {
   const clock = fixedClock(new Date('2026-09-15T09:00:00Z'));
+  const occupancy = createOccupancy({
+    pool,
+    clock,
+    identity: createIdentity({ pool, clock }),
+    portfolio: createPortfolio({ pool, clock }),
+  });
   return createStaffCommands({
     pool,
     clock,
     identity: createIdentity({ pool, clock }),
     portfolio: createPortfolio({ pool, clock }),
-    occupancy: createOccupancy({
-      pool,
-      clock,
-      identity: createIdentity({ pool, clock }),
-      portfolio: createPortfolio({ pool, clock }),
+    occupancy,
+    // No source and no embedder: nothing in *this* file asks a question, and a
+    // catalog that would refuse to sync is the honest stand-in for one. The
+    // ordering rule has its own tests in src/channel/.
+    channel: createChannel({
+      occupancy,
+      catalog: createCatalog({ pool, clock }),
     }),
   });
 }

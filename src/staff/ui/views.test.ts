@@ -204,6 +204,30 @@ describe('admin views', () => {
     ).value;
     assert.ok(page.includes('ללא מספור'));
   });
+  it('says which chunks a search can reach, when that is fewer than all of them', () => {
+    // Since 14.1b a cover page and a bare heading are stored and never embedded.
+    // A page reading "2 סעיפים" over a search that can see one of them is the
+    // all-clear 12.1 already got wrong once.
+    const detail = chunkDetail('§1');
+    const chunk = detail.chunks[0];
+    const page = chunksPage(
+      {
+        ...detail,
+        chunks: [
+          chunk,
+          { ...chunk, id: 'c2', ordinal: 1, clauseRef: null, text: 'עמוד שער' },
+        ],
+      },
+      context('admin'),
+    ).value;
+    assert.ok(page.includes('ניתנים לחיפוש'));
+    assert.ok(page.includes('לא נכלל בחיפוש'));
+  });
+  it('says nothing about searchability when every chunk is searchable', () => {
+    const page = chunksPage(chunkDetail('§1'), context('admin')).value;
+    assert.ok(!page.includes('ניתנים לחיפוש'));
+    assert.ok(!page.includes('לא נכלל בחיפוש'));
+  });
   it('names the pages that carried no text layer, rather than counting them', () => {
     // OCR is week 3's cut line. A lease four pages short must say which four:
     // an operator reading an answer out of it is entitled to know the answer
