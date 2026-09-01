@@ -368,11 +368,19 @@ Merged as [#35](https://github.com/RandomWilder/dona-v3/pull/35) — `gate` and 
 Evidence: `tasks/evidence/day-14-ranking-rule.md`.
 
 > **Closed on the golden set, NOT on staging.** Every number is the 8-page fixture's, where the
-> 38-page contract had these questions at 5th and 3rd of 8. The staging re-measure is owed and is
+> 38-page contract had these questions at 5th and 3rd of 8. The staging re-measure is owed and was
 > **blocked by 14.1c below** — the real lease has extracted fields, and a document with fields
-> cannot currently be read again. Nothing on staging has exercised this slice yet.
+> could not be read again. 14.1c closed that on 2026-09-01.
+>
+> **The re-measure is now blocked again, by 14.1d, and this is a finding rather than a delay.**
+> The re-ingest ran and two of the verification's six steps are answered: the chunk count moved
+> (221 -> 212, indexed 211), and `נספח א׳ §5` **is still braided** — 14.1b's two-column fix holds
+> on the fixture and not on the real annex, whose corridor is 11pt against a 35.7pt threshold.
+> **Ranking these two questions now would measure retrieval over scrambled text**, so steps 3-5
+> wait for 14.1d rather than producing numbers that look like evidence. One of 14.1b's six bullets
+> is therefore **not proven on the real contract**; the other five stand.
 
-### Slice 14.1c — Let a lease be read again ☐
+### Slice 14.1c — Let a lease be read again ☑
 > **Found 2026-09-01, immediately after 14.1b merged, while planning the staging verification.**
 > Not caused by 14.1b — it has been true since 13.1 — but it is what blocks 14.1b from being
 > proven on the real contract, so it goes first.
@@ -413,10 +421,22 @@ that has moved."* The intent was written down; it was never implemented.
 
 **Done when:** a document that has been extracted can be ingested again, and its reviews survive.
 **Verify:** the new contract test, plus a re-ingest of the real lease on staging. · Size: S
-**First half done 2026-09-01, locally.** Red then green on the same test, and the whole gate
-behind it: typecheck clean · lint clean · `REQUIRE_POSTGRES=1 npm test` 495/495 with nothing
-skipped · `REQUIRE_EMBEDDINGS=1 npm run evals` 9/9. **The staging half is owed** and is the
-re-ingest of the real lease — which is step 2 of the verification below, so the two are one press.
+**Closed 2026-09-01 — both halves.** The test was written first and failed first, as the raw
+`23503` from `replaceChunks` the defect note predicted; then the gate whole — typecheck clean ·
+lint clean · `REQUIRE_POSTGRES=1 npm test` 495/495 with nothing skipped ·
+`REQUIRE_EMBEDDINGS=1 npm run evals` 9/9. On staging the real 38-page contract was re-ingested
+while holding facts — `302` in 8.9s where the same press returned a 500 an hour earlier — and
+read back **out of the database rather than off the screen that wrote it**:
+`chunks 212 (was 221) · indexed 211 · facts 4 · reviews 5 · facts citing a missing chunk 0`.
+**Five reviews survived the re-read**, which is the slice. The one unindexed chunk is the cover
+page, so 14.1b's privacy rule fires on the real lease too. Merged as
+[#36](https://github.com/RandomWilder/dona-v3/pull/36); staging serves `d36b242`. Evidence:
+`tasks/evidence/day-14-reingest.md`.
+
+> **The press produced four findings and one open question, none of them a 14.1c failure.** They
+> are carried at the bottom of this file under "Carried in from day 14 (third pass)". The one
+> that changes the week's plan is the first: **`נספח א׳ §5` is still braided on the real lease**,
+> so 14.1b's two-column fix holds on the fixture and not on the contract.
 
 > **The staging verification 14.1b is owed, in order — ~20 minutes, not a slice.** Do it the moment
 > 14.1c is merged, before 14.2:
@@ -434,6 +454,51 @@ re-ingest of the real lease — which is step 2 of the verification below, so th
 >
 > **If the two ranks do not move on the real lease, that is a finding and not a failure** — it goes
 > to 14.2's cases and hybrid retrieval becomes its own slice. Do not patch 14.1b.
+
+### Slice 14.1d — The real annex's corridor is 11 points ☐
+> **Opened 2026-09-01 from 14.1c's staging read, with the cause measured rather than suspected.**
+> 14.1b closed the two-column braid against the 8-page fixture and it **does not hold on the real
+> contract**. This is the slice that was going to be "hybrid retrieval" and is not: retrieval is
+> not what is broken here.
+
+**The defect, on the real `נספח א׳ §5` (p14):** the row's label is cut into three pieces with body
+lines pushed between them, inside one 453-character chunk that is *correctly numbered and cited*.
+The citation is right and the text inside it is scrambled — the worse half, because the clause
+looks citable, and a rank measured over it is a rank over text nobody can read.
+
+**The cause, measured from the PDF's geometry (no text read):**
+
+```
+page 14: 139 items, 36 baselines
+widest corridor between columns : 11.0 pt
+columnGapOf(595.32) demands     : 35.7 pt   -> splitColumns returns null, page read line by line
+candidates rejected: thin column 20 · too many crossing 0 · corridor too narrow 119
+```
+
+**And the obvious fix is already dead**, which is why this is a slice and not a patch. Lowering
+the threshold to 11pt collides with ordinary word spacing on the same page:
+
+```
+intra-line word gaps, p50 3.0 · p75 7.4 · p90 12.2 · p95 15.9
+gaps >= 11.0 pt : 17 of 100     <- the corridor is inside the word-gap distribution
+gaps >= 35.7 pt : 2 of 100
+```
+
+- [ ] **Width alone cannot separate a corridor from a word gap on this page, and the slice may not
+      pretend otherwise.** The candidate signal is *vertical persistence* — a real corridor falls at
+      the same x across many baselines, a wide word gap does not — but it is a candidate, not the
+      decision: measure first, the way 14.1a measured before 14.1b changed anything
+- [ ] `columnGapOf` is shared with `joinRow`, which uses it to tell a word gap from a column gap.
+      Whatever replaces it has to keep one page from being two columns for one caller and one
+      column for the other — the property the shared constant exists to hold
+- [ ] The fixture gets an annex with a **narrow** corridor, because the current one is why this
+      passed: `evals/fixtures/mock-lease.ts`'s annex has a wide corridor and the real one does not
+- [ ] A test that pins **every page of prose is read exactly as before** — 14.1b's guarantee, which
+      this must not spend
+- [ ] Re-ingest on staging and read `נספח א׳ §5` back out of the database, not off the screen
+
+**Done when:** `נספח א׳ §5` reads as one whole sentence on the real contract.
+**Verify:** the chunk's text read back from staging's database. · Size: M
 
 ### Slice 14.2 — Golden set v1 in CI ☐
 > **The harness is 14.1a's; this slice is the cases.** **Three** kinds exist as of 14.1b —
@@ -465,6 +530,53 @@ re-ingest of the real lease — which is step 2 of the verification below, so th
 - A slice that doesn't finish moves to tomorrow **as-is** — never half-merge.
 - Anything cut under pressure gets written at the bottom here, not silently dropped.
 - External fuses (`tasks/fuses.md`) get a one-line status check every morning.
+
+## Carried in from day 14 (third pass)
+
+> All five came out of 14.1c's staging press, read out of the database. Evidence:
+> `tasks/evidence/day-14-reingest.md`.
+
+- ~~**`נספח א׳ §5` is still braided**~~ — **promoted to slice 14.1d above on 2026-09-01, with the
+  cause measured.** The real annex's column corridor is **11.0pt** against `columnGapOf`'s 35.7pt
+  demand, so `splitColumns` returns null and the page is read line by line; and the obvious fix is
+  already dead, because 17 of 100 ordinary word gaps on that page are also ≥ 11pt. Not a carry any
+  more — it is the next slice, and it blocks the rest of 14.1b's staging verification.
+- **`notice` did not come back at all.** Facts went 5 → 4 on the re-extract — `deductibles`,
+  `rent`, `securities`, `term` returned and `notice` produced nothing. Day 13 measured `notice`
+  swinging between `§5.3` and `§5.4–5.5`; a field vanishing outright is a new point on that
+  curve and strengthens the case for 14.2's extract-twice-and-diff case.
+- **Standing came back 0 of 5, where the plan expected 5** — and two causes are tangled in that
+  number. The extractor oscillates, *and* the chunking genuinely changed underneath (221 → 212
+  chunks, plus the braid above), so the text that produced today's values is not the text that
+  produced the ones a human confirmed on 2026-08-31. One press cannot separate them. Narrowing
+  `stands` on this observation is PIPELINE.md §9's named anti-pattern; 14.2's eval settles it.
+- **Two admin buttons differ by two words, and the more destructive one is the shorter.**
+  `קריאה מחדש` on the unit page re-reads the clauses (`views.ts:224`); `קריאה מחדש של השדות` on
+  the document page re-reads the fields (`views.ts:461`). The first was pressed as the second
+  during this verification and the mistake was invisible on screen — only the Cloud Run access
+  log showed which route ran. Wants `SPEC-staff.md` wording before it costs a real re-read.
+- **Nothing this system does is observable in production.** Confirmed while trying to verify
+  this slice from logs alone: across three minutes covering an ingest, an extract and a search,
+  Cloud Run held **18 request lines carrying HTTP metadata only** (`textPayload: null`, no
+  `jsonPayload`) and **exactly one stdout line — the boot banner**. An ingest producing 0 chunks
+  and one producing 212 emit the identical log line, so the counts had to be read out of the
+  database. This is the same class as 12.1's "a property that lived for one HTTP response",
+  one level up, and it is what makes every staging verification a manual database read.
+  Belongs with week 6's observability work, and is cheap: `ingestDocument` already computes
+  every number worth logging.
+
+- **The spec's privacy guarantee was false, and is withdrawn.** Chased on 2026-09-01 rather than
+  left open: the 9-digit runs are **real ת״ז of the named parties**, alongside home addresses,
+  mobile numbers and an email, inside `נספח ו׳ §1`, `נספח ו׳ §2` and `נספח י״ב` — all indexed, all
+  embedded, all sent. **19 of 211 indexed chunks mention `ת״ז` or `תעודת זהות`.** Excluding the
+  cover page removes one dense chunk, not the category, and `SPEC-occupancy.md` claimed otherwise
+  in two places. Both corrected. The decision that replaces the assumption is
+  [ADR-0004](../docs/decisions/ADR-0004-personal-data-reaches-the-model-provider.md): **redaction
+  at the provider boundary becomes its own slice** (a masked copy is sent, the stored text stays
+  whole), and **the legal basis — a DPA and disclosure to data subjects — is owed and is not the
+  agent's to assert.** Nothing is rolled back: the ranking argument for the rule was always the
+  load-bearing one and is untouched. **Redaction should land before week 4**, when a tenant's own
+  question plus their own lease is a larger surface than one contract in a staging bucket.
 
 ## Carried in from day 14 (second pass)
 

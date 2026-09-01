@@ -669,11 +669,21 @@ The argument is one argument wearing two hats, and both were measured rather tha
   won a question about the lease term outright. Nothing downstream could ever have used it: a
   citation cannot name it, and this system's whole stance is that an answer is only as good as the
   clause it points at.
-- **Privacy.** It is also the PII-densest text in the document — both parties' names, two ID
-  numbers, a phone, an email, two addresses. Not embedding it means those never reach the embedding
-  provider. This is the **identical rule `twin.ts` already applies to extraction** (see "Which
-  clauses are sent is decided by clause reference, never by similarity"), reached from the other
-  direction: selection requires a clause number, the front page has none.
+- **Privacy — and the claim originally written here was false, corrected 2026-09-01.** The front
+  page is the PII-densest *single* chunk — both parties' names, two ID numbers, a phone, an email,
+  two addresses — and not embedding it is the **identical rule `twin.ts` applies to extraction**
+  (see "Which clauses are sent is decided by clause reference, never by similarity"), reached from
+  the other direction: selection requires a clause number, the front page has none.
+
+  **What this does *not* do is keep personal data away from the provider, and this spec said it
+  did.** Measured on the real contract during 14.1c: the same parties reappear, with full ID
+  numbers, home addresses, mobile numbers and an email, inside **numbered annex clauses that are
+  indexed and embedded** — `נספח ו׳ §1`, `נספח ו׳ §2` and `נספח י״ב`, the promissory note and the
+  agreement form. **19 indexed chunks mention `ת״ז` or `תעודת זהות`.** Excluding the cover page
+  removes one concentration of it and not the category. The accuracy argument above stands
+  unchanged and is the reason the rule exists; the privacy sentence was a claim nobody had
+  measured, and it is withdrawn. What replaces it is a decision rather than a guarantee:
+  [ADR-0004](docs/decisions/ADR-0004-personal-data-reaches-the-model-provider.md).
 
 **Stored, not indexed** — the distinction is the whole design. `ingestDocument` still writes every
 chunk row, so `listChunks` still shows the front page, the document's text is still complete on the
@@ -778,11 +788,17 @@ ranking as **not yet good enough** and carried it to 14.1 with a diagnosis. A tw
 ranking that is known to be wrong would inherit the problem invisibly; a twin built on
 `נספח א׳ §5` by name is reading the clause the reference note says to read.
 
-**It is also a privacy decision, taken here rather than inherited.** The front page is the
-PII-densest text in the document — two names, two ID numbers, two phones, an email — and 12.2
+**It has a privacy consequence too, and it is narrower than this spec used to claim.** The front
+page is the PII-densest single chunk — two names, two ID numbers, two phones, an email — and 12.2
 measured it as the chunk most likely to be retrieved for any vague question. It carries no clause
 number, and selection here requires one, so **the front page is never sent to the model at all**.
-That is a property of the selection rule and is asserted by a test, not a habit.
+That much is a property of the selection rule and is asserted by a test, not a habit.
+
+**It does not follow that personal data is not sent, and the stronger reading of this paragraph
+was wrong.** Selection is by clause reference, and the annexes carrying the parties' ID numbers
+*have* clause references — so a field whose clauses fall in `נספח ו׳` or `נספח י״ב` sends them.
+Corrected 2026-09-01 against the real contract; the decision that replaces the assumption is
+[ADR-0004](docs/decisions/ADR-0004-personal-data-reaches-the-model-provider.md).
 
 ### One call per field, and the calls run together
 
